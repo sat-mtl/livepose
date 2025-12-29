@@ -34,7 +34,7 @@ jobs:
       - name: Package custom ossia score app
         uses: ossia/actions/package-custom-app@master
         with:
-          app-name: "My Custom App"
+          app-name: "LivePose"
           qml-files: "qml"
           # Optional: Add your score file here
           score-file: "score/app.score"
