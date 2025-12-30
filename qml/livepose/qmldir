@@ -4,3 +4,5 @@ CustomButton 1.0 Components/CustomButton.qml
 CustomSwitch 1.0 Components/CustomSwitch.qml
 AppMenuBar 1.0 Components/AppMenuBar.qml
 AboutDialog 1.0 Components/AboutDialog.qml
+RunView 1.0 Views/RunView.qml
+LogView 1.0 Views/LogView.qml

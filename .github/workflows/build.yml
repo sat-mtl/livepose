@@ -40,6 +40,16 @@ jobs:
           score-file: "score/app.score"
           release-tag: "continuous"
           platforms: "${{ matrix.platform }}"
+          # App metadata
+          app-organization: "SAT"
+          app-domain: "sat.qc.ca"
+          app-identifier: "ca.qc.sat.livepose"
+          app-description: "pose and blob detection software"
+          app-copyright: "Société des Arts Technologiques"
+          app-version: "1.0"
+          app-png: "qml/livepose/resources/images/LivePose_logo.png"
+          app-ico: "qml/livepose/resources/images/LivePose_logo.png" # TODO: create .ico file
+          app-icns: "qml/livepose/resources/images/LivePose_logo.png" # TODO: create .icns file
           # Optional: macOS code signing (requires secrets to be set in repository)
           macos-certificate-base64: ${{ secrets.MAC_CERT_B64 }}
           macos-certificate-password: ${{ secrets.MAC_CERT_PASSWORD }}
