@@ -48,8 +48,8 @@ jobs:
           app-copyright: "Société des Arts Technologiques"
           app-version: "1.0"
           app-png: "qml/livepose/resources/images/LivePose_logo.png"
-          app-ico: "qml/livepose/resources/images/LivePose_logo.png" # TODO: create .ico file
-          app-icns: "qml/livepose/resources/images/LivePose_logo.png" # TODO: create .icns file
+          app-ico: "qml/livepose/resources/images/LivePose_logo.png"
+          app-icns: "qml/livepose/resources/images/LivePose_logo.icns"
           # Optional: macOS code signing (requires secrets to be set in repository)
           macos-certificate-base64: ${{ secrets.MAC_CERT_B64 }}
           macos-certificate-password: ${{ secrets.MAC_CERT_PASSWORD }}
