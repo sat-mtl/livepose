@@ -351,6 +351,7 @@ Pane {
                         id: modelFilePathField
                         Layout.fillWidth: true;
                         font.pixelSize: AppStyle.fontSizeBody
+                        text: ""  // QML is source of truth
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
                         
@@ -379,47 +380,30 @@ Pane {
                             return null
                         }
                         
-                        UI.PortSource on text {
-                            port: (typeof currentModelPort !== "undefined" && currentModelPort !== null) ? currentModelPort : null
+                        onTextChanged: {
+                            showModelFileError = false
+                            if (currentModelPort) {
+                                try {
+                                    Score.setValue(currentModelPort, text)
+                                    if (runView.logger && text !== "") {
+                                        runView.logger.log("Model file updated: " + text)
+                                    }
+                                } catch(e) {
+                                    console.log("Error setting model file:", e)
+                                }
+                            }
                         }
                         
                         onCurrentModelPortChanged: {
                             if (currentModelPort) {
                                 Qt.callLater(function() {
                                     try {
-                                        var portValue = currentModelPort.value
-                                        if (!portValue) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var valueStr = String(portValue)
-                                        var onnxIdx = valueStr.indexOf(".onnx")
-                                        if (onnxIdx < 0) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var libIdx = valueStr.indexOf("<LIBRARY>:")
-                                        if (libIdx >= 0 && libIdx < onnxIdx) {
-                                            text = valueStr.substring(libIdx, onnxIdx + 5)
-                                        } else {
-                                            var absPathIdx = valueStr.indexOf("/")
-                                            if (absPathIdx >= 0 && absPathIdx < onnxIdx) {
-                                                text = valueStr.substring(absPathIdx, onnxIdx + 5)
-                                            } else {
-                                                text = valueStr.substring(0, onnxIdx + 5)
-                                            }
-                                        }
-                                        
-                                        text = text.trim().replace(/^["\\]+/, "").replace(/["]+$/, "")
+                                        // Push the QML value to Score (will be empty string on model switch)
+                                        Score.setValue(currentModelPort, text)
                                     } catch(e) {
-                                        console.log("Error reading port:", e)
-                                        text = ""
+                                        console.log("Error syncing model to Score:", e)
                                     }
                                 })
-                            } else {
-                                text = ""
                             }
                         }
                     }
