@@ -633,6 +633,7 @@ Pane {
                 text: "9000"
                 enabled: !runStopSwitch.checked
                 color: enabled ? AppStyle.textColor : "#999999"
+                validator: IntValidator { bottom: 1; top: 65535 }
             }
 
             // --- Expose model properties ---
