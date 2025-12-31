@@ -368,9 +368,9 @@ Pane {
                             }
                             var modelName = runView.currentProcess.scenarioLabel
                             if (hasValidPath) {
-                                return "Model file loaded from Score"
+                                return "Model file loaded"
                             } else {
-                                return "No model file set for " + modelName
+                                return "/path/to/" + modelName + "_model.onnx"
                             }
                         }
                         
