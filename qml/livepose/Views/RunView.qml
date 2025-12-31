@@ -22,6 +22,8 @@ Pane {
     
     property bool showModelError: false
     property bool showCameraError: false
+    property bool showModelFileError: false
+    property bool showClassesFileError: false
 
     function updateModelPath() {
         if (!currentProcess) return
@@ -186,6 +188,11 @@ Pane {
         if (!currentProcess || !currentProcess.process) {
             logger.log("Error: Please select a model first")
             showModelError = true
+            return false
+        }
+        if (!modelFilePathField.hasValidPath) {
+            logger.log("Error: Please select an ONNX model file")
+            showModelFileError = true
             return false
         }
         if (cameraSelector.currentIndex <= 0) {
@@ -430,6 +437,13 @@ Pane {
                         }
                         modelFilePathField.text = filePath
                     }
+                }
+
+                Label {
+                    visible: showModelFileError
+                    text: "Please select an ONNX model file"
+                    color: "#FF6B6B"
+                    font.pixelSize: AppStyle.fontSizeSmall
                 }
 
                 Label {
@@ -717,6 +731,8 @@ Pane {
                     text: {
                         if (!currentProcess) {
                             return "Please select a model"
+                        } else if (!modelFilePathField.hasValidPath) {
+                            return "Please select an ONNX model file"
                         } else if (cameraSelector.currentIndex <= 0) {
                             return "Please select a camera"
                         } else if (isRunning) {
