@@ -184,6 +184,8 @@ Pane {
     function validateBeforeStart() {
         showModelError = false
         showCameraError = false
+        showModelFileError = false
+        showClassesFileError = false
         
         if (!currentProcess || !currentProcess.process) {
             logger.log("Error: Please select a model first")
@@ -193,6 +195,11 @@ Pane {
         if (!modelFilePathField.hasValidPath) {
             logger.log("Error: Please select an ONNX model file")
             showModelFileError = true
+            return false
+        }
+        if (currentProcess.scenarioLabel === "resnet" && !classesFilePathField.hasValidPath) {
+            logger.log("Error: Please select a classes file")
+            showClassesFileError = true
             return false
         }
         if (cameraSelector.currentIndex <= 0) {
@@ -462,7 +469,11 @@ Pane {
                         id: classesFilePathField
                         Layout.fillWidth: true
                         font.pixelSize: AppStyle.fontSizeBody
-                        placeholderText: "Path to classes .txt file"
+                        text: ""  // QML is source of truth
+                        
+                        property bool hasValidPath: text !== "" && text.indexOf(".txt") >= 0
+                        
+                        placeholderText: "/path/to/classes.txt"
                         
                         property var currentClassesPort: {
                             if (!runView.currentProcess || runView.currentProcess.scenarioLabel !== "resnet") return null
@@ -474,52 +485,9 @@ Pane {
                             return null
                         }
                         
-                        UI.PortSource on text {
-                            port: (typeof currentClassesPort !== "undefined" && currentClassesPort !== null) ? currentClassesPort : null
-                        }
-                        
-                        onCurrentClassesPortChanged: {
-                            if (currentClassesPort) {
-                                Qt.callLater(function() {
-                                    try {
-                                        var portValue = currentClassesPort.value
-                                        if (!portValue) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var valueStr = String(portValue)
-                                        var txtIdx = valueStr.indexOf(".txt")
-                                        if (txtIdx < 0) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var libIdx = valueStr.indexOf("<LIBRARY>:")
-                                        if (libIdx >= 0 && libIdx < txtIdx) {
-                                            text = valueStr.substring(libIdx, txtIdx + 4)
-                                        } else {
-                                            var absPathIdx = valueStr.indexOf("/")
-                                            if (absPathIdx >= 0 && absPathIdx < txtIdx) {
-                                                text = valueStr.substring(absPathIdx, txtIdx + 4)
-                                            } else {
-                                                text = valueStr.substring(0, txtIdx + 4)
-                                            }
-                                        }
-                                        
-                                        text = text.trim().replace(/^["\\]+/, "").replace(/["]+$/, "")
-                                    } catch(e) {
-                                        console.log("Error reading classes port:", e)
-                                        text = ""
-                                    }
-                                })
-                            } else {
-                                text = ""
-                            }
-                        }
-                        
                         onTextChanged: {
-                            if (currentProcess && currentProcess.scenarioLabel === "resnet" && currentClassesPort) {
+                            showClassesFileError = false
+                            if (currentClassesPort) {
                                 try {
                                     Score.setValue(currentClassesPort, text)
                                     if (runView.logger && text !== "") {
@@ -528,6 +496,18 @@ Pane {
                                 } catch(e) {
                                     console.log("Error setting classes file:", e)
                                 }
+                            }
+                        }
+                        
+                        onCurrentClassesPortChanged: {
+                            if (currentClassesPort) {
+                                Qt.callLater(function() {
+                                    try {
+                                        Score.setValue(currentClassesPort, text)
+                                    } catch(e) {
+                                        console.log("Error syncing classes to Score:", e)
+                                    }
+                                })
                             }
                         }
                     }
@@ -539,12 +519,19 @@ Pane {
                     }
                 }
                 
+                Label {
+                    visible: showClassesFileError && currentProcess && currentProcess.scenarioLabel === "resnet"
+                    text: "Please select a classes file"
+                    color: "#FF6B6B"
+                    font.pixelSize: AppStyle.fontSizeSmall
+                }
+                
                 FileDialog {
                     id: classesFileDialog
                     title: "Select Classes File"
                     nameFilters: ["Text Files (*.txt)", "All Files (*)"]
                     onAccepted: {
-                        var filePath = classesFileDialog.selectedFile.toString()  // Changed: use classesFileDialog.selectedFile
+                        var filePath = classesFileDialog.selectedFile.toString()
                         if (filePath.startsWith("file://")) {
                             filePath = filePath.substring(7)
                         }
