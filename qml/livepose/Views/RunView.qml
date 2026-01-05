@@ -24,6 +24,8 @@ Pane {
     property bool showCameraError: false
     property bool showModelFileError: false
     property bool showClassesFileError: false
+    property var modelPaths: ({})
+    property var classesPaths: ({})
 
     function updateModelPath() {
         if (!currentProcess) return
@@ -324,12 +326,27 @@ Pane {
                 onCurrentIndexChanged: {
                     restartIfRunning()
                     showModelError = false  // Clear error when selection changes
+                    if (currentProcess && currentProcess.scenarioLabel) {
+                        var oldLabel = currentProcess.scenarioLabel
+                        if (modelFilePathField.text) {
+                            modelPaths[oldLabel] = modelFilePathField.text
+                        }
+                        if (classesFilePathField.text) {
+                            classesPaths[oldLabel] = classesFilePathField.text
+                        }
+                    }
                     if (currentIndex > 0) {
                         currentProcess = availableProcesses[currentIndex - 1]
-                        logger.log("Selected model: " + model[currentIndex])
+                        var newLabel = currentProcess.scenarioLabel
+                        logger.log("Selected model: " + newLabel)
+                        
+                        modelFilePathField.text = modelPaths[newLabel] || ""
+                        classesFilePathField.text = classesPaths[newLabel] || ""
                     }
                     else {
                         currentProcess = null
+                        modelFilePathField.text = ""
+                        classesFilePathField.text = ""
                     }
                 }
             }
