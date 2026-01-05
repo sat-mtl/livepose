@@ -22,6 +22,8 @@ Pane {
     
     property bool showModelError: false
     property bool showCameraError: false
+    property bool showModelFileError: false
+    property bool showClassesFileError: false
 
     function updateModelPath() {
         if (!currentProcess) return
@@ -182,10 +184,22 @@ Pane {
     function validateBeforeStart() {
         showModelError = false
         showCameraError = false
+        showModelFileError = false
+        showClassesFileError = false
         
         if (!currentProcess || !currentProcess.process) {
             logger.log("Error: Please select a model first")
             showModelError = true
+            return false
+        }
+        if (!modelFilePathField.hasValidPath) {
+            logger.log("Error: Please select an ONNX model file")
+            showModelFileError = true
+            return false
+        }
+        if (currentProcess.scenarioLabel === "resnet" && !classesFilePathField.hasValidPath) {
+            logger.log("Error: Please select a classes file")
+            showClassesFileError = true
             return false
         }
         if (cameraSelector.currentIndex <= 0) {
@@ -351,6 +365,7 @@ Pane {
                         id: modelFilePathField
                         Layout.fillWidth: true;
                         font.pixelSize: AppStyle.fontSizeBody
+                        text: ""  // QML is source of truth
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
                         
@@ -360,9 +375,9 @@ Pane {
                             }
                             var modelName = runView.currentProcess.scenarioLabel
                             if (hasValidPath) {
-                                return "Model file loaded from Score"
+                                return "Model file loaded"
                             } else {
-                                return "No model file set for " + modelName
+                                return "/path/to/" + modelName + "_model.onnx"
                             }
                         }
                         
@@ -379,47 +394,30 @@ Pane {
                             return null
                         }
                         
-                        UI.PortSource on text {
-                            port: (typeof currentModelPort !== "undefined" && currentModelPort !== null) ? currentModelPort : null
+                        onTextChanged: {
+                            showModelFileError = false
+                            if (currentModelPort) {
+                                try {
+                                    Score.setValue(currentModelPort, text)
+                                    if (runView.logger && text !== "") {
+                                        runView.logger.log("Model file updated: " + text)
+                                    }
+                                } catch(e) {
+                                    console.log("Error setting model file:", e)
+                                }
+                            }
                         }
                         
                         onCurrentModelPortChanged: {
                             if (currentModelPort) {
                                 Qt.callLater(function() {
                                     try {
-                                        var portValue = currentModelPort.value
-                                        if (!portValue) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var valueStr = String(portValue)
-                                        var onnxIdx = valueStr.indexOf(".onnx")
-                                        if (onnxIdx < 0) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var libIdx = valueStr.indexOf("<LIBRARY>:")
-                                        if (libIdx >= 0 && libIdx < onnxIdx) {
-                                            text = valueStr.substring(libIdx, onnxIdx + 5)
-                                        } else {
-                                            var absPathIdx = valueStr.indexOf("/")
-                                            if (absPathIdx >= 0 && absPathIdx < onnxIdx) {
-                                                text = valueStr.substring(absPathIdx, onnxIdx + 5)
-                                            } else {
-                                                text = valueStr.substring(0, onnxIdx + 5)
-                                            }
-                                        }
-                                        
-                                        text = text.trim().replace(/^["\\]+/, "").replace(/["]+$/, "")
+                                        // Push the QML value to Score (will be empty string on model switch)
+                                        Score.setValue(currentModelPort, text)
                                     } catch(e) {
-                                        console.log("Error reading port:", e)
-                                        text = ""
+                                        console.log("Error syncing model to Score:", e)
                                     }
                                 })
-                            } else {
-                                text = ""
                             }
                         }
                     }
@@ -449,6 +447,13 @@ Pane {
                 }
 
                 Label {
+                    visible: showModelFileError
+                    text: "Please select an ONNX model file"
+                    color: "#FF6B6B"
+                    font.pixelSize: AppStyle.fontSizeSmall
+                }
+
+                Label {
                     text: "Classes File (.txt)"
                     font.bold: true
                     font.pixelSize: AppStyle.fontSizeBody
@@ -464,7 +469,11 @@ Pane {
                         id: classesFilePathField
                         Layout.fillWidth: true
                         font.pixelSize: AppStyle.fontSizeBody
-                        placeholderText: "Path to classes .txt file"
+                        text: ""  // QML is source of truth
+                        
+                        property bool hasValidPath: text !== "" && text.indexOf(".txt") >= 0
+                        
+                        placeholderText: "/path/to/classes.txt"
                         
                         property var currentClassesPort: {
                             if (!runView.currentProcess || runView.currentProcess.scenarioLabel !== "resnet") return null
@@ -476,52 +485,9 @@ Pane {
                             return null
                         }
                         
-                        UI.PortSource on text {
-                            port: (typeof currentClassesPort !== "undefined" && currentClassesPort !== null) ? currentClassesPort : null
-                        }
-                        
-                        onCurrentClassesPortChanged: {
-                            if (currentClassesPort) {
-                                Qt.callLater(function() {
-                                    try {
-                                        var portValue = currentClassesPort.value
-                                        if (!portValue) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var valueStr = String(portValue)
-                                        var txtIdx = valueStr.indexOf(".txt")
-                                        if (txtIdx < 0) {
-                                            text = ""
-                                            return
-                                        }
-                                        
-                                        var libIdx = valueStr.indexOf("<LIBRARY>:")
-                                        if (libIdx >= 0 && libIdx < txtIdx) {
-                                            text = valueStr.substring(libIdx, txtIdx + 4)
-                                        } else {
-                                            var absPathIdx = valueStr.indexOf("/")
-                                            if (absPathIdx >= 0 && absPathIdx < txtIdx) {
-                                                text = valueStr.substring(absPathIdx, txtIdx + 4)
-                                            } else {
-                                                text = valueStr.substring(0, txtIdx + 4)
-                                            }
-                                        }
-                                        
-                                        text = text.trim().replace(/^["\\]+/, "").replace(/["]+$/, "")
-                                    } catch(e) {
-                                        console.log("Error reading classes port:", e)
-                                        text = ""
-                                    }
-                                })
-                            } else {
-                                text = ""
-                            }
-                        }
-                        
                         onTextChanged: {
-                            if (currentProcess && currentProcess.scenarioLabel === "resnet" && currentClassesPort) {
+                            showClassesFileError = false
+                            if (currentClassesPort) {
                                 try {
                                     Score.setValue(currentClassesPort, text)
                                     if (runView.logger && text !== "") {
@@ -530,6 +496,18 @@ Pane {
                                 } catch(e) {
                                     console.log("Error setting classes file:", e)
                                 }
+                            }
+                        }
+                        
+                        onCurrentClassesPortChanged: {
+                            if (currentClassesPort) {
+                                Qt.callLater(function() {
+                                    try {
+                                        Score.setValue(currentClassesPort, text)
+                                    } catch(e) {
+                                        console.log("Error syncing classes to Score:", e)
+                                    }
+                                })
                             }
                         }
                     }
@@ -541,12 +519,19 @@ Pane {
                     }
                 }
                 
+                Label {
+                    visible: showClassesFileError && currentProcess && currentProcess.scenarioLabel === "resnet"
+                    text: "Please select a classes file"
+                    color: "#FF6B6B"
+                    font.pixelSize: AppStyle.fontSizeSmall
+                }
+                
                 FileDialog {
                     id: classesFileDialog
                     title: "Select Classes File"
                     nameFilters: ["Text Files (*.txt)", "All Files (*)"]
                     onAccepted: {
-                        var filePath = classesFileDialog.selectedFile.toString()  // Changed: use classesFileDialog.selectedFile
+                        var filePath = classesFileDialog.selectedFile.toString()
                         if (filePath.startsWith("file://")) {
                             filePath = filePath.substring(7)
                         }
@@ -648,6 +633,7 @@ Pane {
                 text: "9000"
                 enabled: !runStopSwitch.checked
                 color: enabled ? AppStyle.textColor : "#999999"
+                validator: IntValidator { bottom: 1; top: 65535 }
             }
 
             // --- Expose model properties ---
@@ -733,6 +719,8 @@ Pane {
                     text: {
                         if (!currentProcess) {
                             return "Please select a model"
+                        } else if (!modelFilePathField.hasValidPath) {
+                            return "Please select an ONNX model file"
                         } else if (cameraSelector.currentIndex <= 0) {
                             return "Please select a camera"
                         } else if (isRunning) {
