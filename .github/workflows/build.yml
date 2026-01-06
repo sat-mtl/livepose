@@ -1,4 +1,4 @@
-name: Build Custom App
+name: Build LivePose
 
 on:
   push:
@@ -61,7 +61,7 @@ jobs:
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
-          name: custom-app-${{ matrix.artifact-name }}
+          name: livepose-${{ matrix.artifact-name }}
           path: packages/
           retention-days: 30
 
@@ -76,7 +76,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: all-packages
-          pattern: custom-app-*
+          pattern: livepose-*
           merge-multiple: true
 
       - name: Create Release (on tags)
