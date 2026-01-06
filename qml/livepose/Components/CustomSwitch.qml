@@ -11,8 +11,8 @@ Switch {
         x: control.leftPadding
         y: parent.height / 2 - height / 2
         radius: 13
-        color: control.checked ? AppStyle.buttonBgActive : AppStyle.buttonBgInactive
-        border.color: control.checked ? AppStyle.buttonBgActive : "#cccccc"
+        color: control.checked ? appStyle.buttonBgActive : appStyle.buttonBgInactive
+        border.color: control.checked ? appStyle.buttonBgActive : "#cccccc"
 
         Rectangle {
             x: control.checked ? parent.width - width - 2 : 2
@@ -21,7 +21,7 @@ Switch {
             height: 22
             radius: 11
             color: "white"
-            border.color: control.checked ? AppStyle.buttonBgActive : "#999999"
+            border.color: control.checked ? appStyle.buttonBgActive : "#999999"
 
             Behavior on x {
                 NumberAnimation {
@@ -33,8 +33,8 @@ Switch {
 
     contentItem: Text {
         text: control.text
-        font.pixelSize: AppStyle.fontSizeBody
-        color: AppStyle.textColor
+        font.pixelSize: appStyle.fontSizeBody
+        color: appStyle.textColor
         verticalAlignment: Text.AlignVCenter
         leftPadding: control.indicator.width + 8
     }

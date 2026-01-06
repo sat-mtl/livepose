@@ -47,8 +47,8 @@ Dialog {
         Label {
             Layout.alignment: Qt.AlignHCenter
             text: appDescription
-            font.pixelSize: AppStyle.fontSizeSubtitle
-            color: AppStyle.textColor
+            font.pixelSize: appStyle.fontSizeSubtitle
+            color: appStyle.textColor
         }
         
         Text {
@@ -58,9 +58,9 @@ Dialog {
             text: appDetails + " <a href=\"" + appWebsite + "\">" + appWebsite + "</a>"
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
-            font.pixelSize: AppStyle.fontSizeBody
-            color: AppStyle.textColor
-            linkColor: AppStyle.primaryColor
+            font.pixelSize: appStyle.fontSizeBody
+            color: appStyle.textColor
+            linkColor: appStyle.primaryColor
             onLinkActivated: function(url) {
                 Qt.openUrlExternally(url)
             }

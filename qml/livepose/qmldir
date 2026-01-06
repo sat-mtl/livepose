@@ -1,5 +1,6 @@
 module livepose
-singleton AppStyle 1.0 AppStyle.qml
+DarkStyle 1.0 DarkStyle.qml
+LightStyle 1.0 LightStyle.qml
 CustomButton 1.0 Components/CustomButton.qml
 CustomSwitch 1.0 Components/CustomSwitch.qml
 AppMenuBar 1.0 Components/AppMenuBar.qml
