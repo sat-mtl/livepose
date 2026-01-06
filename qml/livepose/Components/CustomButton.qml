@@ -9,13 +9,13 @@ Item {
     property bool isActive: false
     signal clicked
     
-    height: AppStyle.sidebarButtonHeight
+    height: appStyle.sidebarButtonHeight
     clip: false
     
     Rectangle {
         id: buttonBackground
         anchors.fill: parent
-        color: AppStyle.sidebarBackgroundColor
+        color: appStyle.sidebarBackgroundColor
         radius: 0
         
         Rectangle {
@@ -24,7 +24,7 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             width: 3
-            color: AppStyle.primaryColor
+            color: appStyle.primaryColor
             visible: root.isActive
         }
         
@@ -38,8 +38,8 @@ Item {
             id: buttonText
             text: "Button"
             anchors.centerIn: parent
-            color: root.isActive ? AppStyle.primaryColor : AppStyle.textColorLight
-            font.pixelSize: AppStyle.fontSizeBody
+            color: root.isActive ? appStyle.primaryColor : appStyle.textColorLight
+            font.pixelSize: appStyle.fontSizeBody
             font.bold: root.isActive
         }
     }

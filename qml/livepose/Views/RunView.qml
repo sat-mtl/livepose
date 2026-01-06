@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Dialogs
 import Score.UI as UI
@@ -7,6 +8,10 @@ import livepose
 
 Pane {
     id: runView
+    background: Rectangle {
+        color: appStyle.backgroundColor
+    }
+
 
     property var logger: mainWindow.logger
 
@@ -293,34 +298,34 @@ Pane {
 
         ColumnLayout {
             width: parent.width
-            spacing: AppStyle.spacing * 0.75
-            anchors.margins: AppStyle.padding
+            spacing: appStyle.spacing * 0.75
+            anchors.margins: appStyle.padding
 
             Label {
                 text: "Model Configuration"
                 font.bold: true
-                font.pixelSize: AppStyle.fontSizeTitle
-                color: AppStyle.textColor
-                Layout.topMargin: AppStyle.padding
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeTitle
+                color: appStyle.textColor
+                Layout.topMargin: appStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             // --- Model Selection ---
             Label {
                 text: "Choose AI Model"
                 font.bold: true
-                font.pixelSize: AppStyle.fontSizeSubtitle
-                color: AppStyle.textColor
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeSubtitle
+                color: appStyle.textColor
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             ComboBox {
                 id: backendSelector
                 Layout.fillWidth: true
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
                 model: [" "]
 
                 onCurrentIndexChanged: {
@@ -356,23 +361,23 @@ Pane {
                 visible: showModelError
                 text: "Please select a model"
                 color: "#FF6B6B"
-                font.pixelSize: AppStyle.fontSizeSmall
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeSmall
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: AppStyle.padding * 2
-                Layout.rightMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding * 2
+                Layout.rightMargin: appStyle.padding
                 visible: currentProcess !== null
-                spacing: AppStyle.spacing
+                spacing: appStyle.spacing
 
                 Label {
                     text: "ONNX Model File"
                     font.bold: true
-                    font.pixelSize: AppStyle.fontSizeBody
-                    color: AppStyle.textColor
+                    font.pixelSize: appStyle.fontSizeBody
+                    color: appStyle.textColor
                 }
 
                 RowLayout {
@@ -381,7 +386,7 @@ Pane {
                     TextField { 
                         id: modelFilePathField
                         Layout.fillWidth: true;
-                        font.pixelSize: AppStyle.fontSizeBody
+                        font.pixelSize: appStyle.fontSizeBody
                         text: ""  // QML is source of truth
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
@@ -441,7 +446,7 @@ Pane {
                     
                     Button {
                         text: "Browse"
-                        font.pixelSize: AppStyle.fontSizeBody
+                        font.pixelSize: appStyle.fontSizeBody
                         onClicked: onnxFileDialog.open()
                     }
                 }
@@ -455,7 +460,10 @@ Pane {
                             console.log("No file selected")
                             return
                         }
-                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
+                        var filePath = selectedFile.toString()
+                        if (filePath.startsWith("file://")) {
+                            filePath = filePath.substring(7)
+                        }
                         modelFilePathField.text = filePath
                     }
                 }
@@ -464,14 +472,14 @@ Pane {
                     visible: showModelFileError
                     text: "Please select an ONNX model file"
                     color: "#FF6B6B"
-                    font.pixelSize: AppStyle.fontSizeSmall
+                    font.pixelSize: appStyle.fontSizeSmall
                 }
 
                 Label {
                     text: "Classes File (.txt)"
                     font.bold: true
-                    font.pixelSize: AppStyle.fontSizeBody
-                    color: AppStyle.textColor
+                    font.pixelSize: appStyle.fontSizeBody
+                    color: appStyle.textColor
                     visible: currentProcess && currentProcess.scenarioLabel === "resnet" // only visible for resnet
                 }
 
@@ -482,7 +490,7 @@ Pane {
                     TextField {
                         id: classesFilePathField
                         Layout.fillWidth: true
-                        font.pixelSize: AppStyle.fontSizeBody
+                        font.pixelSize: appStyle.fontSizeBody
                         text: ""  // QML is source of truth
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".txt") >= 0
@@ -528,7 +536,7 @@ Pane {
                     
                     Button {
                         text: "Browse"
-                        font.pixelSize: AppStyle.fontSizeBody
+                        font.pixelSize: appStyle.fontSizeBody
                         onClicked: classesFileDialog.open()
                     }
                 }
@@ -537,7 +545,7 @@ Pane {
                     visible: showClassesFileError && currentProcess && currentProcess.scenarioLabel === "resnet"
                     text: "Please select a classes file"
                     color: "#FF6B6B"
-                    font.pixelSize: AppStyle.fontSizeSmall
+                    font.pixelSize: appStyle.fontSizeSmall
                 }
                 
                 FileDialog {
@@ -549,6 +557,9 @@ Pane {
                             console.log("No file selected")
                             return
                         }
+                        console.log(Qt.platform.os);
+                        console.log(selectedFile);
+                        console.log( new URL(selectedFile).pathname);
                         var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
                         classesFilePathField.text = filePath
                     }
@@ -559,10 +570,10 @@ Pane {
             Label {
                 text: "Select Camera"
                 font.bold: true
-                font.pixelSize: AppStyle.fontSizeSubtitle
-                color: AppStyle.textColor
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeSubtitle
+                color: appStyle.textColor
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             Timer {
@@ -575,8 +586,8 @@ Pane {
             ComboBox {
                 id: cameraSelector
                 Layout.fillWidth: true
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
                 model: [" ", ...cameraPrettyNamesList]
                 
                 onCurrentIndexChanged: {
@@ -611,43 +622,43 @@ Pane {
                 visible: showCameraError
                 text: "Please select a camera"
                 color: "#FF6B6B"
-                font.pixelSize: AppStyle.fontSizeSmall
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeSmall
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             // --- Output ---
             Label {
                 text: "OSC Output Settings"
                 font.bold: true
-                font.pixelSize: AppStyle.fontSizeSubtitle
-                color: AppStyle.textColor
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeSubtitle
+                color: appStyle.textColor
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             TextField {
                 id: oscIpAddress
                 Layout.fillWidth: true
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
                 placeholderText: "IP (e.g. 127.0.0.1)"
-                height: AppStyle.inputHeight
+                height: appStyle.inputHeight
                 text: "127.0.0.1"
                 enabled: !runStopSwitch.checked
-                color: enabled ? AppStyle.textColor : "#999999"
+                color: enabled ? appStyle.textColor : "#999999"
             }
 
             TextField {
                 id: oscPort
                 Layout.fillWidth: true
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
                 placeholderText: "Port (e.g. 9000)"
-                height: AppStyle.inputHeight
+                height: appStyle.inputHeight
                 text: "9000"
                 enabled: !runStopSwitch.checked
-                color: enabled ? AppStyle.textColor : "#999999"
+                color: enabled ? appStyle.textColor : "#999999"
                 validator: IntValidator { bottom: 1; top: 65535 }
             }
 
@@ -655,10 +666,10 @@ Pane {
             Label {
                 text: "Video Preview"
                 font.bold: true
-                font.pixelSize: AppStyle.fontSizeSubtitle
-                color: AppStyle.textColor
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                font.pixelSize: appStyle.fontSizeSubtitle
+                color: appStyle.textColor
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
             }
 
             Rectangle {
@@ -666,11 +677,11 @@ Pane {
                 Layout.fillHeight: true
                 Layout.minimumWidth: 360
                 Layout.minimumHeight: 200
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
                 color: "transparent"
-                radius: AppStyle.borderRadius
-                border.color: AppStyle.borderColor
+                radius: appStyle.borderRadius
+                border.color: appStyle.borderColor
                 border.width: 1
 
             UI.TextureSource {
@@ -686,14 +697,14 @@ Pane {
                     anchors.fill: parent
                     anchors.margins: 2
                     color: "#F5F5F5"
-                    radius: AppStyle.borderRadius
+                    radius: appStyle.borderRadius
                     visible: !currentProcess || !currentProcess.scenarioLabel
                     
                     Text {
                         anchors.centerIn: parent
                         text: "No model selected"
-                        color: AppStyle.textColor
-                        font.pixelSize: AppStyle.fontSizeBody
+                        color: appStyle.textColor
+                        font.pixelSize: appStyle.fontSizeBody
                         opacity: 0.6
                     }
                 }
@@ -706,9 +717,9 @@ Pane {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: AppStyle.padding
-                Layout.rightMargin: AppStyle.padding
-                Layout.bottomMargin: AppStyle.padding
+                Layout.leftMargin: appStyle.padding
+                Layout.rightMargin: appStyle.padding
+                Layout.bottomMargin: appStyle.padding
 
                 CustomSwitch {
                     id: runStopSwitch
@@ -744,7 +755,7 @@ Pane {
                             return "Ready to start: " + currentProcess.scenarioLabel
                         }
                     }
-                    color: AppStyle.textColor
+                    color: appStyle.textColor
                 }
             }
         }

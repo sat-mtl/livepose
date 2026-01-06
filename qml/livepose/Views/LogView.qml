@@ -28,14 +28,14 @@ Pane {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: AppStyle.padding
-        spacing: AppStyle.spacing
+        anchors.margins: appStyle.padding
+        spacing: appStyle.spacing
 
         Label {
             text: "Application Log"
             font.bold: true
-            font.pixelSize: AppStyle.fontSizeTitle
-            color: AppStyle.textColor
+            font.pixelSize: appStyle.fontSizeTitle
+            color: appStyle.textColor
         }
 
         ScrollView {
@@ -48,13 +48,13 @@ Pane {
                 readOnly: true
                 wrapMode: TextEdit.Wrap
                 font.family: "Courier"
-                font.pixelSize: AppStyle.fontSizeBody
-                color: AppStyle.textColor
+                font.pixelSize: appStyle.fontSizeBody
+                color: appStyle.textColor
             }
         }
 
         RowLayout {
-            spacing: AppStyle.spacing
+            spacing: appStyle.spacing
 
             Button {
                 text: "Clear Log"

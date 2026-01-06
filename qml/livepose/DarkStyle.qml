@@ -1,12 +1,12 @@
-pragma Singleton
 import QtQuick
 
 QtObject {
+
     property color primaryColor: "#007AFF"
     property color secondaryColor: "#5856D6"
-    property color backgroundColor: "#F2F2F7"
-    property color textColor: "#000000"
-    property color textColorLight: "#FFFFFF"
+    property color backgroundColor: "#000"
+    property color textColor: "#EEE"
+    property color textColorLight: "#FFF"
     property color borderColor: "#C6C6C8"
     property color buttonBgActive: "#4CD964"
     property color buttonBgInactive: "#E5E5EA"

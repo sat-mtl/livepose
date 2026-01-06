@@ -6,13 +6,21 @@ import livepose
 
 ApplicationWindow {
     id: mainWindow
-    width: AppStyle.windowWidth
-    height: AppStyle.windowHeight
-    minimumWidth: AppStyle.windowMinWidth
-    minimumHeight: AppStyle.windowMinHeight
+    width: appStyle.windowWidth
+    height: appStyle.windowHeight
+    minimumWidth: appStyle.windowMinWidth
+    minimumHeight: appStyle.windowMinHeight
     visible: true
     title: "LivePose"
+    DarkStyle {
+        id: dark_style
+    }
+    LightStyle {
+        id: light_style
+    }
+    property var appStyle:  Application.styleHints.colorScheme === Qt.ColorScheme.Dark ? dark_style : light_style
     
+    Component.onCompleted: console.log( Application.styleHints.colorScheme)
     property var logger: QtObject {
         function log(message) {
             console.log(message);
@@ -24,7 +32,7 @@ ApplicationWindow {
     property int currentViewIndex: 0
     readonly property int runViewIndex: 0
     readonly property int logViewIndex: 1
-    
+
     AboutDialog {
         id: aboutDialog
         parentWindow: mainWindow
@@ -41,25 +49,25 @@ ApplicationWindow {
         
         Rectangle {
             id: sidebar
-            width: AppStyle.sidebarWidth
+            width: appStyle.sidebarWidth
             Layout.fillHeight: true
-            color: AppStyle.sidebarBackgroundColor
+            color: appStyle.sidebarBackgroundColor
             
             ColumnLayout {
                 id: sidebarColumn
                 anchors.fill: parent
                 anchors.leftMargin: 0
-                anchors.topMargin: AppStyle.padding
+                anchors.topMargin: appStyle.padding
                 anchors.rightMargin: 0
-                anchors.bottomMargin: AppStyle.padding
-                spacing: AppStyle.spacing
+                anchors.bottomMargin: appStyle.padding
+                spacing: appStyle.spacing
                 
                 Image {
                     id: logoImage
                     Layout.preferredWidth: 60
                     Layout.preferredHeight: 60
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.topMargin: AppStyle.padding
+                    Layout.topMargin: appStyle.padding
                     source: "livepose/resources/images/LivePose_logo.png"
                     fillMode: Image.PreserveAspectFit
                     
@@ -74,7 +82,7 @@ ApplicationWindow {
                     id: runButton
                     text: "Run"
                     Layout.fillWidth: true
-                    Layout.topMargin: AppStyle.spacing
+                    Layout.topMargin: appStyle.spacing
                     isActive: currentViewIndex === runViewIndex
                     onClicked: currentViewIndex = runViewIndex
                 }
@@ -83,7 +91,7 @@ ApplicationWindow {
                     id: logButton
                     text: "Log"
                     Layout.fillWidth: true
-                    Layout.topMargin: AppStyle.spacing
+                    Layout.topMargin: appStyle.spacing
                     isActive: currentViewIndex === logViewIndex
                     onClicked: currentViewIndex = logViewIndex
                 }
