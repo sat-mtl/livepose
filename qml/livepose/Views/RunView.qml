@@ -455,10 +455,7 @@ Pane {
                             console.log("No file selected")
                             return
                         }
-                        var filePath = selectedFile.toString()
-                        if (filePath.startsWith("file://")) {
-                            filePath = filePath.substring(7)
-                        }
+                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
                         modelFilePathField.text = filePath
                     }
                 }
