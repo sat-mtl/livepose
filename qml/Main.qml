@@ -18,7 +18,14 @@ ApplicationWindow {
     LightStyle {
         id: light_style
     }
-    property var appStyle:  Application.styleHints.colorScheme === Qt.ColorScheme.Dark ? dark_style : light_style
+
+    property var appStyle: {
+        // On Linux, colorScheme often returns Unknown (0), so default to dark
+        if (Qt.platform.os === "linux" && Application.styleHints.colorScheme === Qt.ColorScheme.Unknown) {
+            return dark_style
+        }
+        return Application.styleHints.colorScheme === Qt.ColorScheme.Dark ? dark_style : light_style
+    }
     
     palette {
         text: appStyle.textColor
