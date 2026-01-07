@@ -323,6 +323,7 @@ Pane {
                 Layout.fillWidth: true
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
+                font.family: appStyle.fontFamily
                 model: [" "]
 
                 onCurrentIndexChanged: {
@@ -378,10 +379,9 @@ Pane {
                 RowLayout {
                     Layout.fillWidth: true
                     
-                    TextField { 
+                    CustomTextField { 
                         id: modelFilePathField
-                        Layout.fillWidth: true;
-                        font.pixelSize: appStyle.fontSizeBody
+                        Layout.fillWidth: true
                         text: ""  // QML is source of truth
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
@@ -441,6 +441,7 @@ Pane {
                     
                     Button {
                         text: "Browse"
+                        font.family: appStyle.fontFamily
                         font.pixelSize: appStyle.fontSizeBody
                         onClicked: onnxFileDialog.open()
                     }
@@ -480,10 +481,9 @@ Pane {
                     Layout.fillWidth: true
                     visible: currentProcess && currentProcess.scenarioLabel === "resnet"
                     
-                    TextField {
+                    CustomTextField {
                         id: classesFilePathField
                         Layout.fillWidth: true
-                        font.pixelSize: appStyle.fontSizeBody
                         text: ""  // QML is source of truth
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".txt") >= 0
@@ -529,6 +529,7 @@ Pane {
                     
                     Button {
                         text: "Browse"
+                        font.family: appStyle.fontFamily
                         font.pixelSize: appStyle.fontSizeBody
                         onClicked: classesFileDialog.open()
                     }
@@ -580,6 +581,7 @@ Pane {
                 Layout.fillWidth: true
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
+                font.family: appStyle.fontFamily
                 model: [" ", ...cameraPrettyNamesList]
                 
                 onCurrentIndexChanged: {
@@ -628,28 +630,24 @@ Pane {
                 Layout.rightMargin: appStyle.padding
             }
 
-            TextField {
+            CustomTextField {
                 id: oscIpAddress
                 Layout.fillWidth: true
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
                 placeholderText: "IP (e.g. 127.0.0.1)"
-                height: appStyle.inputHeight
                 text: "127.0.0.1"
                 enabled: !runStopSwitch.checked
-                color: enabled ? appStyle.textColor : appStyle.textColorSecondary
             }
 
-            TextField {
+            CustomTextField {
                 id: oscPort
                 Layout.fillWidth: true
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
                 placeholderText: "Port (e.g. 9000)"
-                height: appStyle.inputHeight
                 text: "9000"
                 enabled: !runStopSwitch.checked
-                color: enabled ? appStyle.textColor : appStyle.textColorSecondary
                 validator: IntValidator { bottom: 1; top: 65535 }
             }
 
@@ -715,10 +713,7 @@ Pane {
                 }
             }
 
-            Item {
-                Layout.fillHeight: true
-                Layout.minimumHeight: 10
-            } // Spacer
+
 
             RowLayout {
                 Layout.fillWidth: true

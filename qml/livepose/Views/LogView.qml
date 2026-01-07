@@ -60,6 +60,7 @@ Pane {
 
             Button {
                 text: "Clear Log"
+                font.family: appStyle.fontFamily
                 onClicked: {
                     logView.clear()
                 }
@@ -67,6 +68,7 @@ Pane {
 
             Button {
                 text: "Test Log"
+                font.family: appStyle.fontFamily
                 onClicked: {
                     logView.log("Test log message at " + new Date().toLocaleTimeString())
                 }

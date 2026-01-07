@@ -4,7 +4,7 @@ LightStyle 1.0 LightStyle.qml
 CustomButton 1.0 Components/CustomButton.qml
 CustomLabel 1.0 Components/CustomLabel.qml
 CustomSwitch 1.0 Components/CustomSwitch.qml
-AppMenuBar 1.0 Components/AppMenuBar.qml
+CustomTextField 1.0 Components/CustomTextField.qml
 AboutDialog 1.0 Components/AboutDialog.qml
 RunView 1.0 Views/RunView.qml
 LogView 1.0 Views/LogView.qml
