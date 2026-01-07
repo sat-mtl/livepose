@@ -34,11 +34,10 @@ Pane {
         anchors.margins: appStyle.padding
         spacing: appStyle.spacing
 
-        Label {
+        CustomLabel {
             text: "Application Log"
             font.bold: true
             font.pixelSize: appStyle.fontSizeTitle
-            color: appStyle.textColor
         }
 
         ScrollView {

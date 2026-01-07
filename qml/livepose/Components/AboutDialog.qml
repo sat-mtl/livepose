@@ -37,18 +37,17 @@ Dialog {
             Layout.preferredHeight: 100
         }
         
-        Label {
+        CustomLabel {
             Layout.alignment: Qt.AlignHCenter
             text: appName
             font.pixelSize: 32
             font.bold: true
         }
         
-        Label {
+        CustomLabel {
             Layout.alignment: Qt.AlignHCenter
             text: appDescription
             font.pixelSize: appStyle.fontSizeSubtitle
-            color: appStyle.textColor
         }
         
         Text {
@@ -58,6 +57,7 @@ Dialog {
             text: appDetails + " <a href=\"" + appWebsite + "\">" + appWebsite + "</a>"
             wrapMode: Text.WordWrap
             horizontalAlignment: Text.AlignHCenter
+            font.family: appStyle.fontFamily
             font.pixelSize: appStyle.fontSizeBody
             color: appStyle.textColor
             linkColor: appStyle.primaryColor
