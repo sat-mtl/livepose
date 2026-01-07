@@ -5,6 +5,12 @@ import QtQuick.Dialogs
 import Score.UI as UI
 import livepose
 
+import "../js/CameraUtils.js" as CameraUtils
+import "../js/ScenarioUtils.js" as ScenarioUtils
+import "../js/ValidationUtils.js" as ValidationUtils
+import "../js/ScoreUtils.js" as ScoreUtils
+import "../js/ProcessControl.js" as ProcessControl
+
 Pane {
     id: runView
     background: Rectangle {
@@ -37,28 +43,16 @@ Pane {
         var filePath = modelFilePathField.text
         if (!filePath) return
         
-        var modelMap = {
-            "blazepose": blaze_Pose.model,
-            "yolov8_pose": yOLO_Pose.model,
-            "resnet": resnet_detector.model
-        }
-        
-        var modelPort = modelMap[currentProcess.scenarioLabel]
-        if (modelPort) {
-            Score.setValue(modelPort, filePath)
-        }
+        ScoreUtils.updateModelPath(Score, currentProcess, filePath, {
+            blazePose: blaze_Pose,
+            yoloPose: yOLO_Pose,
+            resnetDetector: resnet_detector
+        })
     }
 
     function saveAllFieldsToScore() {
         updateModelPath()
-        
-        if (currentProcess && currentProcess.scenarioLabel === "resnet" && resnet_detector.classes) {
-            try {
-                Score.setValue(resnet_detector.classes, classesFilePathField.text)
-            } catch(e) {
-                console.log("Error saving classes file:", e)
-            }
-        }
+        ScoreUtils.saveClassesFile(Score, currentProcess, classesFilePathField.text, resnet_detector)
     }
 
     Item {
@@ -97,52 +91,16 @@ Pane {
         }
     }
 
-    // get the video in port via the video mapper
     function getVideoInPortViaMapper(videoMapperLabel) {
-         if (!videoMapperLabel) return null;
-         var videoMapper = Score.find(videoMapperLabel);
-         if (!videoMapper) return null 
-         return Score.port(videoMapper, "in");
-     }
+        return ScenarioUtils.getVideoInPortViaMapper(Score, videoMapperLabel)
+    }
 
     function findAllScenarios() {
-        logger.log("Finding AI Model Scenarios")
-        availableProcesses = []
-        var label = ["blazepose", "yolov8_pose", "resnet"]
-    
-        var triggerMap = {
-            "blazepose":    "blazeposetrigger",
-            "yolov8_pose":  "yolov8_posetrigger",  
-            "resnet":       "resnettrigger"
-        }
-        
-        var videoMapperMap = {
-            "blazepose":   "blazepose Video Mapper",
-            "yolov8_pose": "yolov8_pose Video Mapper",
-            "resnet":      "resnet Video Mapper"
-        }
-
-        for (var i = 0; i < label.length; i++) {
-            var id   = label[i]
-            var videoMapperId = videoMapperMap[id]
-            var proc = Score.find(videoMapperId)
-            if (proc) {
-                availableProcesses.push({
-                    scenarioLabel: id,
-                    videoMapperLabel: videoMapperId, 
-                    process:     proc,
-                    triggerName: triggerMap[id]
-                })
-            }
-        }
-    
-        var modelList = [" "]
-        for (var j = 0; j < availableProcesses.length; j++) {
-            modelList.push(availableProcesses[j].scenarioLabel)
-        }
+        var result = ScenarioUtils.findAllScenarios(Score, logger)
+        availableProcesses = result.availableProcesses
 
         if (availableProcesses.length > 0) {
-            backendSelector.model = modelList
+            backendSelector.model = result.modelList
             backendSelector.currentIndex = 1
             currentProcess = availableProcesses[0]
             logger.log("Auto-selected model: " + availableProcesses[0].scenarioLabel)
@@ -153,67 +111,28 @@ Pane {
     }
 
     function enumerateCameras() {
-        logger.log("Enumerating cameras...")
-        console.log("Starting camera enumeration...")
-
-        try {
-            deviceEnumerator = Score.enumerateDevices(
-                        "d615690b-f2e2-447b-b70e-a800552db69c")
-            console.log("Score.enumerateDevices returned:", deviceEnumerator)
-
-            deviceEnumerator.enumerate = true
-            console.log("Set enumerate to true")
-
-            cameraList = []
-            cameraPrettyNamesList = []
-            console.log("Devices array:", deviceEnumerator.devices)
-
-            for (let dev of deviceEnumerator.devices) {
-                console.log("Found device:", dev)
-                console.log("Device protocol:", dev.protocol)
-                console.log("Device name:", dev.name)
-                logger.log("Found camera: " + dev.name)
-
-                cameraList.push(dev)
-                cameraPrettyNamesList.push(dev.category + ": " + dev.name)
-            }
-
-            console.log("Final camera list:", cameraPrettyNamesList)
-
-            cameraSelector.model = [" ", ...cameraPrettyNamesList]
-        } catch (error) {
-            console.error("Error during camera enumeration:", error)
-            logger.log("Error enumerating cameras: " + error)
-        }
+        var result = CameraUtils.enumerateCameras(Score, logger)
+        deviceEnumerator = result.deviceEnumerator
+        cameraList = result.cameraList
+        cameraPrettyNamesList = result.cameraPrettyNamesList
+        cameraSelector.model = [" ", ...cameraPrettyNamesList]
     }
 
     function validateBeforeStart() {
-        showModelError = false
-        showCameraError = false
-        showModelFileError = false
-        showClassesFileError = false
+        var result = ValidationUtils.validateBeforeStart({
+            currentProcess: currentProcess,
+            hasValidModelPath: modelFilePathField.hasValidPath,
+            hasValidClassesPath: classesFilePathField.hasValidPath,
+            cameraIndex: cameraSelector.currentIndex,
+            logger: logger
+        })
         
-        if (!currentProcess || !currentProcess.process) {
-            logger.log("Error: Please select a model first")
-            showModelError = true
-            return false
-        }
-        if (!modelFilePathField.hasValidPath) {
-            logger.log("Error: Please select an ONNX model file")
-            showModelFileError = true
-            return false
-        }
-        if (currentProcess.scenarioLabel === "resnet" && !classesFilePathField.hasValidPath) {
-            logger.log("Error: Please select a classes file")
-            showClassesFileError = true
-            return false
-        }
-        if (cameraSelector.currentIndex <= 0) {
-            logger.log("Error: Please select a camera first")
-            showCameraError = true
-            return false
-        }
-        return true
+        showModelError = result.errors.showModelError
+        showCameraError = result.errors.showCameraError
+        showModelFileError = result.errors.showModelFileError
+        showClassesFileError = result.errors.showClassesFileError
+        
+        return result.valid
     }
 
     function startTriggeredScenario() {
@@ -221,57 +140,36 @@ Pane {
             return
         }
         if (isStarting) return
-        isStarting = true;
+        isStarting = true
         saveAllFieldsToScore()
-        const scenario = currentProcess.process
-        const scenarioName = currentProcess.scenarioLabel
         
-        logger.log(`Starting ${scenarioName} scenario`)
-        const cameraName = cameraPrettyNamesList[cameraSelector.currentIndex - 1]
-        logger.log("Using camera: " + cameraName)
-
-        Score.startMacro()
-
-        // Camera is required (validated above)
-        const cameraSettings = cameraList[cameraSelector.currentIndex - 1].settings
-        Score.removeDevice("Camera")
-        Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", cameraSettings)
-        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel);
-        if (inputPort) Score.setAddress(inputPort, "Camera:/")
-
-        if (!oscReady) {
-            try { Score.removeDevice("MyOSC"); } catch(e) {}
-            const host   = (oscIpAddress.text || "127.0.0.1").trim();
-            const outPort = parseInt(oscPort.text) || 9000;
-            const inPort  = (outPort === 9000 ? 9001 : outPort + 1);
-            console.log(`[OSC] createOSCDevice MyOSC → ${host} (in:${inPort} out:${outPort})`);
-            Score.createOSCDevice("MyOSC", host, inPort, outPort);
-
-            try { Score.createAddress("MyOSC:/skeleton", "List"); } catch (_) {}
-
-            oscReady = true;
+        var oscWasSetup = ProcessControl.startTriggeredScenario({
+            Score: Score,
+            currentProcess: currentProcess,
+            logger: logger,
+            cameraName: cameraPrettyNamesList[cameraSelector.currentIndex - 1],
+            cameraSettings: cameraList[cameraSelector.currentIndex - 1].settings,
+            oscHost: oscIpAddress.text,
+            oscPort: oscPort.text,
+            oscReady: oscReady,
+            getVideoInPort: function() {
+                return getVideoInPortViaMapper(currentProcess.videoMapperLabel)
+            }
+        })
+        
+        if (oscWasSetup) {
+            oscReady = true
         }
-
-        Score.endMacro()
-        Score.play()
-        const trigger = Score.find(currentProcess.triggerName)
-        if (trigger && typeof trigger.triggeredByGui === 'function')
-            trigger.triggeredByGui();
+        
         isRunning = true
         isStarting = false
-        logger.log("Scenario started successfully")
     }
 
     function stopCurrentProcess() {
-        Score.stop();
-        Score.startMacro();
-        try { Score.removeDevice("MyOSC"); } catch(e) {}
-        try { Score.removeDevice("Camera"); } catch(e) {}
-        Score.endMacro();
-        isRunning = false;
-        isStarting = false;
-        oscReady = false;
-        logger.log("Scenario stopped")
+        ProcessControl.stopCurrentProcess(Score, logger)
+        isRunning = false
+        isStarting = false
+        oscReady = false
     }
 
     function restartIfRunning() {
@@ -594,19 +492,9 @@ Pane {
                     const camera_settings = cameraList[currentIndex - 1].settings
                     logger.log("Selected camera: " + camera_name)
                     
-                    Score.removeDevice("Camera")
-
-                    Score.createDevice(
-                        "Camera",
-                        "d615690b-f2e2-447b-b70e-a800552db69c",
-                        camera_settings)
+                    ScoreUtils.setupCamera(Score, camera_settings, 
+                        currentProcess ? getVideoInPortViaMapper(currentProcess.videoMapperLabel) : null)
                     
-                    if (currentProcess) {
-                        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
-                        if (inputPort) {
-                            Score.setAddress(inputPort, "Camera:/")
-                        }
-                    }
                     Score.endMacro()
                 }
             }
@@ -673,6 +561,7 @@ Pane {
                 border.color: appStyle.borderColor
                 border.width: 1
                 
+                width: height * .9
                 // Inner container that clips content to rounded corners
                 Rectangle {
                     id: videoPreviewClip
