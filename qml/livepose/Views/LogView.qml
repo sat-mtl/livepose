@@ -49,7 +49,7 @@ Pane {
                 text: ""
                 readOnly: true
                 wrapMode: TextEdit.Wrap
-                font.family: "Courier"
+                font.family: appStyle.fontFamily
                 font.pixelSize: appStyle.fontSizeBody
                 color: appStyle.textColor
             }

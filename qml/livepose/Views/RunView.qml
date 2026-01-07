@@ -318,12 +318,11 @@ Pane {
                 Layout.rightMargin: appStyle.padding
             }
 
-            ComboBox {
+            CustomComboBox {
                 id: backendSelector
                 Layout.fillWidth: true
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
-                font.family: appStyle.fontFamily
                 model: [" "]
 
                 onCurrentIndexChanged: {
@@ -576,12 +575,11 @@ Pane {
                 repeat: false
                 onTriggered: runStopSwitch.checked = true
             }
-            ComboBox {
+            CustomComboBox {
                 id: cameraSelector
                 Layout.fillWidth: true
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
-                font.family: appStyle.fontFamily
                 model: [" ", ...cameraPrettyNamesList]
                 
                 onCurrentIndexChanged: {
