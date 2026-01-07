@@ -62,10 +62,6 @@ ApplicationWindow {
         parentWindow: mainWindow
     }
     
-    menuBar: AppMenuBar {
-        aboutDialog: aboutDialog
-    }
-    
     RowLayout {
         id: rowLayout
         anchors.fill: parent
