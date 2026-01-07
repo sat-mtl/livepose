@@ -44,6 +44,7 @@ QtObject {
     property int fontSizeSubtitle: 16
     property int fontSizeBody: 14
     property int fontSizeSmall: 12
+    property string fontFamily: "DM Sans"
     
     property int borderRadius: 8
     property int animationDuration: 200
