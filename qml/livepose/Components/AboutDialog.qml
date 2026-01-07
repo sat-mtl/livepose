@@ -103,6 +103,7 @@ Dialog {
         Button {
             Layout.alignment: Qt.AlignHCenter
             text: "Close"
+            font.family: appStyle.fontFamily
             onClicked: aboutDialog.close()
         }
     }
