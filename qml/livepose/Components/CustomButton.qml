@@ -49,6 +49,7 @@ Item {
             color: root.isActive 
                    ? appStyle.primaryColor 
                    : (mouseArea.containsMouse ? appStyle.sidebarTextColor : appStyle.sidebarTextColorInactive)
+            font.family: appStyle.fontFamily
             font.pixelSize: appStyle.fontSizeBody
             font.bold: root.isActive
             

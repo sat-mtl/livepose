@@ -33,6 +33,7 @@ Switch {
 
     contentItem: Text {
         text: control.text
+        font.family: appStyle.fontFamily
         font.pixelSize: appStyle.fontSizeBody
         color: appStyle.textColor
         verticalAlignment: Text.AlignVCenter

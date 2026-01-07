@@ -300,22 +300,20 @@ Pane {
             spacing: appStyle.spacing * 0.75
             anchors.margins: appStyle.padding
 
-            Label {
+            CustomLabel {
                 text: "Model Configuration"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeTitle
-                color: appStyle.textColor
                 Layout.topMargin: appStyle.padding
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
             }
 
             // --- Model Selection ---
-            Label {
+            CustomLabel {
                 text: "Choose AI Model"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                color: appStyle.textColor
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
             }
@@ -356,7 +354,7 @@ Pane {
             }
             
             // Validation feedback for model
-            Label {
+            CustomLabel {
                 visible: showModelError
                 text: "Please select a model"
                 color: appStyle.errorColor
@@ -372,11 +370,9 @@ Pane {
                 visible: currentProcess !== null
                 spacing: appStyle.spacing
 
-                Label {
+                CustomLabel {
                     text: "ONNX Model File"
                     font.bold: true
-                    font.pixelSize: appStyle.fontSizeBody
-                    color: appStyle.textColor
                 }
 
                 RowLayout {
@@ -467,18 +463,16 @@ Pane {
                     }
                 }
 
-                Label {
+                CustomLabel {
                     visible: showModelFileError
                     text: "Please select an ONNX model file"
                     color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
                 }
 
-                Label {
+                CustomLabel {
                     text: "Classes File (.txt)"
                     font.bold: true
-                    font.pixelSize: appStyle.fontSizeBody
-                    color: appStyle.textColor
                     visible: currentProcess && currentProcess.scenarioLabel === "resnet" // only visible for resnet
                 }
 
@@ -540,7 +534,7 @@ Pane {
                     }
                 }
                 
-                Label {
+                CustomLabel {
                     visible: showClassesFileError && currentProcess && currentProcess.scenarioLabel === "resnet"
                     text: "Please select a classes file"
                     color: appStyle.errorColor
@@ -566,11 +560,10 @@ Pane {
             }
 
             // --- Camera Input ---
-            Label {
+            CustomLabel {
                 text: "Select Camera"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                color: appStyle.textColor
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
             }
@@ -617,7 +610,7 @@ Pane {
             }
             
             // Validation feedback for camera
-            Label {
+            CustomLabel {
                 visible: showCameraError
                 text: "Please select a camera"
                 color: appStyle.errorColor
@@ -627,11 +620,10 @@ Pane {
             }
 
             // --- Output ---
-            Label {
+            CustomLabel {
                 text: "OSC Output Settings"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                color: appStyle.textColor
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
             }
@@ -662,11 +654,10 @@ Pane {
             }
 
             // --- Expose model properties ---
-            Label {
+            CustomLabel {
                 text: "Video Preview"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                color: appStyle.textColor
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
             }
@@ -717,6 +708,7 @@ Pane {
                             }
                         }
                         color: appStyle.textColorSecondary
+                        font.family: appStyle.fontFamily
                         font.pixelSize: appStyle.fontSizeBody
                         visible: !runStopSwitch.checked
                     }
@@ -754,7 +746,7 @@ Pane {
                     }
                 }
 
-                Label {
+                CustomLabel {
                     text: {
                         if (!currentProcess) {
                             return "Please select a model"
@@ -768,7 +760,6 @@ Pane {
                             return "Ready to start: " + currentProcess.scenarioLabel
                         }
                     }
-                    color: appStyle.textColor
                 }
             }
         }
