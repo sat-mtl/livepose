@@ -1,5 +1,5 @@
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Score.UI as UI
 import livepose
@@ -19,6 +19,18 @@ ApplicationWindow {
         id: light_style
     }
     property var appStyle:  Application.styleHints.colorScheme === Qt.ColorScheme.Dark ? dark_style : light_style
+    
+    palette {
+        text: appStyle.textColor
+        windowText: appStyle.textColor
+        buttonText: appStyle.textColor
+        base: appStyle.backgroundColorSecondary
+        window: appStyle.backgroundColor
+        button: appStyle.buttonBgInactive
+        highlight: appStyle.primaryColor
+        highlightedText: appStyle.textColorOnAccent
+        placeholderText: appStyle.textColorSecondary
+    }
     
     Component.onCompleted: console.log( Application.styleHints.colorScheme)
     property var logger: QtObject {
