@@ -661,7 +661,7 @@ Pane {
             Rectangle {
                 id: videoPreviewFrame
                 Layout.fillWidth: true
-                Layout.fillHeight: true
+                Layout.preferredHeight: width / aspectRatio  // Height grows based on width
                 Layout.minimumWidth: 360
                 Layout.minimumHeight: 200
                 Layout.leftMargin: appStyle.padding
@@ -670,6 +670,8 @@ Pane {
                 radius: appStyle.borderRadius
                 border.color: appStyle.borderColor
                 border.width: 1
+                
+                readonly property real aspectRatio: 16 / 9
                 
                 // Inner container that clips content to rounded corners
                 Rectangle {
