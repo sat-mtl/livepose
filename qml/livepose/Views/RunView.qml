@@ -360,7 +360,7 @@ Pane {
             Label {
                 visible: showModelError
                 text: "Please select a model"
-                color: "#FF6B6B"
+                color: appStyle.errorColor
                 font.pixelSize: appStyle.fontSizeSmall
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
@@ -471,7 +471,7 @@ Pane {
                 Label {
                     visible: showModelFileError
                     text: "Please select an ONNX model file"
-                    color: "#FF6B6B"
+                    color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
                 }
 
@@ -544,7 +544,7 @@ Pane {
                 Label {
                     visible: showClassesFileError && currentProcess && currentProcess.scenarioLabel === "resnet"
                     text: "Please select a classes file"
-                    color: "#FF6B6B"
+                    color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
                 }
                 
@@ -621,7 +621,7 @@ Pane {
             Label {
                 visible: showCameraError
                 text: "Please select a camera"
-                color: "#FF6B6B"
+                color: appStyle.errorColor
                 font.pixelSize: appStyle.fontSizeSmall
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
@@ -646,7 +646,7 @@ Pane {
                 height: appStyle.inputHeight
                 text: "127.0.0.1"
                 enabled: !runStopSwitch.checked
-                color: enabled ? appStyle.textColor : "#999999"
+                color: enabled ? appStyle.textColor : appStyle.textColorSecondary
             }
 
             TextField {
@@ -658,7 +658,7 @@ Pane {
                 height: appStyle.inputHeight
                 text: "9000"
                 enabled: !runStopSwitch.checked
-                color: enabled ? appStyle.textColor : "#999999"
+                color: enabled ? appStyle.textColor : appStyle.textColorSecondary
                 validator: IntValidator { bottom: 1; top: 65535 }
             }
 
@@ -673,6 +673,7 @@ Pane {
             }
 
             Rectangle {
+                id: videoPreviewFrame
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.minimumWidth: 360
@@ -683,29 +684,42 @@ Pane {
                 radius: appStyle.borderRadius
                 border.color: appStyle.borderColor
                 border.width: 1
-
-            UI.TextureSource {
-                anchors.fill: parent
-                anchors.margins: 2
-                process: currentProcess ? currentProcess.videoMapperLabel : "" 
-                port: 0
-                visible: runStopSwitch.checked
-            }
-                            
-                // Placeholder when no process is selected
+                
+                // Inner container that clips content to rounded corners
                 Rectangle {
+                    id: videoPreviewClip
                     anchors.fill: parent
-                    anchors.margins: 2
-                    color: "#F5F5F5"
-                    radius: appStyle.borderRadius
-                    visible: !currentProcess || !currentProcess.scenarioLabel
+                    anchors.margins: 1
+                    radius: appStyle.borderRadius - 1
+                    color: appStyle.backgroundColorTertiary
+                    clip: true
+                    layer.enabled: true
+                    layer.smooth: true
                     
+                    UI.TextureSource {
+                        anchors.fill: parent
+                        process: currentProcess ? currentProcess.videoMapperLabel : "" 
+                        port: 0
+                        visible: runStopSwitch.checked
+                    }
+                    
+                    // Placeholder when video is not showing
                     Text {
                         anchors.centerIn: parent
-                        text: "No model selected"
-                        color: appStyle.textColor
+                        text: {
+                            if (!currentProcess) {
+                                return "Please select a model"
+                            } else if (!modelFilePathField.hasValidPath) {
+                                return "Please select an ONNX model file"
+                            } else if (cameraSelector.currentIndex <= 0) {
+                                return "Please select a camera"
+                            } else {
+                                return "Ready to start: " + currentProcess.scenarioLabel
+                            }
+                        }
+                        color: appStyle.textColorSecondary
                         font.pixelSize: appStyle.fontSizeBody
-                        opacity: 0.6
+                        visible: !runStopSwitch.checked
                     }
                 }
             }

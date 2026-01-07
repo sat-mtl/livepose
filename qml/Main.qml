@@ -80,7 +80,7 @@ ApplicationWindow {
                 
                 CustomButton {
                     id: runButton
-                    text: "Run"
+                    text: "RUN"
                     Layout.fillWidth: true
                     Layout.topMargin: appStyle.spacing
                     isActive: currentViewIndex === runViewIndex
@@ -89,7 +89,7 @@ ApplicationWindow {
                 
                 CustomButton {
                     id: logButton
-                    text: "Log"
+                    text: "LOGS"
                     Layout.fillWidth: true
                     Layout.topMargin: appStyle.spacing
                     isActive: currentViewIndex === logViewIndex
