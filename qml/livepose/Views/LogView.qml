@@ -5,6 +5,9 @@ import livepose
 
 Pane {
     id: logView
+    background: Rectangle {
+        color: appStyle.backgroundColor
+    }
 
     function log(message) {
         var time = new Date();

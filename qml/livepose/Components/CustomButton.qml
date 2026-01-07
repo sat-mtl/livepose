@@ -15,8 +15,14 @@ Item {
     Rectangle {
         id: buttonBackground
         anchors.fill: parent
-        color: appStyle.sidebarBackgroundColor
+        color: mouseArea.containsMouse && !root.isActive 
+               ? appStyle.sidebarHoverColor 
+               : appStyle.sidebarBackgroundColor
         radius: 0
+        
+        Behavior on color {
+            ColorAnimation { duration: appStyle.animationDuration / 2 }
+        }
         
         Rectangle {
             id: activeIndicator
@@ -29,7 +35,9 @@ Item {
         }
         
         MouseArea {
+            id: mouseArea
             anchors.fill: parent
+            hoverEnabled: true
             onClicked: root.clicked()
             cursorShape: Qt.PointingHandCursor
         }
@@ -38,9 +46,15 @@ Item {
             id: buttonText
             text: "Button"
             anchors.centerIn: parent
-            color: root.isActive ? appStyle.primaryColor : appStyle.textColorLight
+            color: root.isActive 
+                   ? appStyle.primaryColor 
+                   : (mouseArea.containsMouse ? appStyle.sidebarTextColor : appStyle.sidebarTextColorInactive)
             font.pixelSize: appStyle.fontSizeBody
             font.bold: root.isActive
+            
+            Behavior on color {
+                ColorAnimation { duration: appStyle.animationDuration / 2 }
+            }
         }
     }
 }
