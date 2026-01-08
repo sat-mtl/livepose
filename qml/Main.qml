@@ -37,13 +37,7 @@ ApplicationWindow {
         highlightedText: appStyle.textColorOnAccent
         placeholderText: appStyle.textColorSecondary
     }
-    
-    Component.onCompleted: {
-        console.log("colorScheme:", Application.styleHints.colorScheme)
-        console.log("platform:", Qt.platform.os)
-        console.log("appStyle textColor:", appStyle.textColor)
-        console.log("appStyle backgroundColor:", appStyle.backgroundColor)
-    }
+
     property var logger: QtObject {
         function log(message) {
             console.log(message);

@@ -550,9 +550,6 @@ Pane {
                             console.log("No file selected")
                             return
                         }
-                        console.log(Qt.platform.os);
-                        console.log(selectedFile);
-                        console.log( new URL(selectedFile).pathname);
                         var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
                         classesFilePathField.text = filePath
                     }
