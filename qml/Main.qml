@@ -27,15 +27,33 @@ ApplicationWindow {
     }
     
     palette {
+        // Text colors
         text: appStyle.textColor
         windowText: appStyle.textColor
         buttonText: appStyle.textColor
-        base: appStyle.backgroundColorSecondary
+        brightText: appStyle.textColorOnAccent
+        placeholderText: appStyle.textColorSecondary
+        
+        // Background colors
         window: appStyle.backgroundColor
+        base: appStyle.backgroundColorSecondary
+        alternateBase: appStyle.backgroundColorTertiary
+        
+        // Used by FileDialog header/footer
+        light: appStyle.backgroundColorSecondary
+        midlight: appStyle.backgroundColorTertiary
+        mid: appStyle.borderColor
+        dark: appStyle.borderColor
+        shadow: appStyle.backgroundColor
+        
+        // Interactive elements
         button: appStyle.buttonBgInactive
         highlight: appStyle.primaryColor
         highlightedText: appStyle.textColorOnAccent
-        placeholderText: appStyle.textColorSecondary
+        
+        // Links
+        link: appStyle.primaryColor
+        linkVisited: appStyle.secondaryColor
     }
 
     property var logger: QtObject {
