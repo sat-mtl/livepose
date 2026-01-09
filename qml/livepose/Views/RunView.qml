@@ -682,10 +682,17 @@ Pane {
                     layer.smooth: true
                     
                     UI.TextureSource {
-                        anchors.fill: parent
+                        id: textureSource
+                        width: 1280
+                        height: 720
                         process: currentProcess ? currentProcess.videoMapperLabel : "" 
                         port: 0
                         visible: runStopSwitch.checked
+                    }
+                    ShaderEffectSource {
+                        anchors.fill: parent
+                        sourceItem: textureSource
+                        hideSource: true
                     }
                     
                     // Placeholder when video is not showing
