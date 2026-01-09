@@ -44,6 +44,7 @@ jobs:
           # App metadata
           app-organization: "SAT"
           app-domain: "sat.qc.ca"
+          app-environment: environment
           app-identifier: "ca.qc.sat.livepose"
           app-description: "pose and blob detection software"
           app-copyright: "Société des Arts Technologiques"
