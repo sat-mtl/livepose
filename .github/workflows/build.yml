@@ -2,11 +2,10 @@ name: Build LivePose
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, dev, develop ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
