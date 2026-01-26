@@ -12,6 +12,25 @@ ApplicationWindow {
     minimumHeight: appStyle.windowMinHeight
     visible: true
     title: "LivePose"
+    
+    Settings {
+        id: appSettings
+        category: "LivePose"
+
+        property string lastSelectedModel: ""
+        property string lastCameraName: ""
+
+        property string blazeposeModelPath: ""
+        property string yolov8ModelPath: ""
+        property string resnetModelPath: ""
+
+        property string resnetClassesPath: ""
+
+        property string oscIpAddress: "127.0.0.1"
+        property string oscPortValue: "9000"
+    }
+
+    
     DarkStyle {
         id: dark_style
     }
