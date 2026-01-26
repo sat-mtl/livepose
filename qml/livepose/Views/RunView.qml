@@ -24,6 +24,7 @@ Pane {
     property bool isStarting: false
     property bool isRunning: false
     property bool oscReady: false
+    property bool pendingRestart: false
     
     property bool showModelError: false
     property bool showCameraError: false
@@ -31,6 +32,35 @@ Pane {
     property bool showClassesFileError: false
     property var modelPaths: ({})
     property var classesPaths: ({})
+
+    // Connect to Score transport signals for play/stop events
+    Connections {
+        target: Score.transport()
+
+        function onPlay() {
+            console.log("[Transport] Play signal received");
+            isRunning = true;
+            isStarting = false;
+            // Sync switch state (in case playback started externally)
+            runStopSwitch.checked = true;
+        }
+
+        function onStop() {
+            console.log("[Transport] Stop signal received");
+            isRunning = false;
+            isStarting = false;
+            oscReady = false;
+
+            // If a restart was requested, start again now that stop is confirmed
+            if (pendingRestart) {
+                pendingRestart = false;
+                runStopSwitch.checked = true;
+            } else {
+                // Sync switch state (in case playback stopped externally)
+                runStopSwitch.checked = false;
+            }
+        }
+    }
 
     function updateModelPath() {
         if (!currentProcess) return
@@ -219,9 +249,9 @@ Pane {
 
     function startTriggeredScenario() {
         if (!validateBeforeStart()) {
-            return
+            return;
         }
-        if (isStarting) return
+        if (isStarting || isRunning) return;
         isStarting = true;
         saveAllFieldsToScore()
         const scenario = currentProcess.process
@@ -253,14 +283,13 @@ Pane {
             oscReady = true;
         }
 
-        Score.endMacro()
-        Score.play()
-        const trigger = Score.find(currentProcess.triggerName)
+        Score.endMacro();
+        Score.play();
+        const trigger = Score.find(currentProcess.triggerName);
         if (trigger && typeof trigger.triggeredByGui === 'function')
             trigger.triggeredByGui();
-        isRunning = true
-        isStarting = false
-        logger.log("Scenario started successfully")
+        // State (isRunning, isStarting) is now managed by transport onPlay signal
+        logger.log("Scenario started successfully");
     }
 
     function stopCurrentProcess() {
@@ -620,13 +649,6 @@ Pane {
                 Layout.rightMargin: appStyle.padding
             }
 
-            Timer {
-                id: restartTimer
-                interval: 250
-                running: false
-                repeat: false
-                onTriggered: runStopSwitch.checked = true
-            }
             CustomComboBox {
                 id: cameraSelector
                 Layout.fillWidth: true
