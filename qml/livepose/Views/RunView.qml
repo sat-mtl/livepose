@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtQuick.Dialogs
+import QtCore
 import Score.UI as UI
 import livepose
 
@@ -268,23 +269,56 @@ Pane {
         try { Score.removeDevice("MyOSC"); } catch(e) {}
         try { Score.removeDevice("Camera"); } catch(e) {}
         Score.endMacro();
-        isRunning = false;
-        isStarting = false;
-        oscReady = false;
-        logger.log("Scenario stopped")
+        // State (isRunning, isStarting, oscReady) is now managed by transport onStop signal
+        logger.log("Scenario stopped");
     }
 
     function restartIfRunning() {
-       if (runStopSwitch.checked) {
+        if (runStopSwitch.checked) {
+            pendingRestart = true;
             runStopSwitch.checked = false;
-            restartTimer.restart();
-       }
+        }
     }
 
     Component.onCompleted: {
         logger.log("RunView initialized")
-        enumerateCameras()
-        findAllScenarios()
+        enumerateCameras();
+        findAllScenarios();
+
+        restoreSavedSettings();
+    }
+
+    function restoreSavedSettings() {
+        logger.log("Restoring saved settings...")
+
+        modelPaths["blazepose"] = appSettings.blazeposeModelPath
+        modelPaths["yolov8_pose"] = appSettings.yolov8ModelPath
+        modelPaths["resnet"] = appSettings.resnetModelPath
+        classesPaths["resnet"] = appSettings.resnetClassesPath
+
+        oscIpAddress.text = appSettings.oscIpAddress
+        oscPort.text = appSettings.oscPortValue
+
+        if (appSettings.lastSelectedModel !== "" && availableProcesses.length > 0) {
+            for (var i = 0; i < availableProcesses.length; i++) {
+                if (availableProcesses[i].scenarioLabel === appSettings.lastSelectedModel) {
+                    backendSelector.currentIndex = i + 1; 
+                    backendSelector.updateModel(backendSelector.currentIndex);
+                    logger.log("Restored model: " + appSettings.lastSelectedModel);
+                    break;
+                }
+            }
+        }
+
+        if (appSettings.lastCameraName !== "" && cameraPrettyNamesList.length > 0) {
+            for (var j = 0; j < cameraPrettyNamesList.length; j++) {
+                if (cameraPrettyNamesList[j] === appSettings.lastCameraName) {
+                    cameraSelector.currentIndex = j + 1;
+                    logger.log("Restored camera: " + appSettings.lastCameraName);
+                    break;
+                }
+            }
+        }
     }
 
     Component.onDestruction: {
@@ -324,8 +358,9 @@ Pane {
                 Layout.leftMargin: appStyle.padding
                 Layout.rightMargin: appStyle.padding
                 model: [" "]
-
-                onCurrentIndexChanged: {
+                
+                function updateModel(currentIndex)
+                {
                     restartIfRunning()
                     showModelError = false  // Clear error when selection changes
                     if (currentProcess && currentProcess.scenarioLabel) {
@@ -338,19 +373,24 @@ Pane {
                         }
                     }
                     if (currentIndex > 0) {
-                        currentProcess = availableProcesses[currentIndex - 1]
-                        var newLabel = currentProcess.scenarioLabel
-                        logger.log("Selected model: " + newLabel)
-                        
-                        modelFilePathField.text = modelPaths[newLabel] || ""
-                        classesFilePathField.text = classesPaths[newLabel] || ""
+                        currentProcess = availableProcesses[currentIndex - 1];
+                        var newLabel = currentProcess.scenarioLabel;
+                        logger.log("Selected model: " + newLabel);
+
+                        // Save selected model to persistent settings
+                        appSettings.lastSelectedModel = newLabel;
+
+                        modelFilePathField.text = modelPaths[newLabel] || "";
+                        classesFilePathField.text = classesPaths[newLabel] || "";
                     }
                     else {
-                        currentProcess = null
-                        modelFilePathField.text = ""
-                        classesFilePathField.text = ""
+                        currentProcess = null;
+                        modelFilePathField.text = "";
+                        classesFilePathField.text = "";
                     }
                 }
+
+                onCurrentIndexChanged: updateModel(currentIndex)
             }
             
             // Validation feedback for model
@@ -420,6 +460,18 @@ Pane {
                                     }
                                 } catch(e) {
                                     console.log("Error setting model file:", e)
+                                }
+                            }
+
+                            // Save model path to persistent settings
+                            if (runView.currentProcess) {
+                                var scenario = runView.currentProcess.scenarioLabel
+                                if (scenario === "blazepose") {
+                                    appSettings.blazeposeModelPath = text
+                                } else if (scenario === "yolov8_pose") {
+                                    appSettings.yolov8ModelPath = text
+                                } else if (scenario === "resnet") {
+                                    appSettings.resnetModelPath = text
                                 }
                             }
                         }
@@ -511,6 +563,9 @@ Pane {
                                     console.log("Error setting classes file:", e)
                                 }
                             }
+
+                            // Save classes path to persistent settings
+                            appSettings.resnetClassesPath = text
                         }
                         
                         onCurrentClassesPortChanged: {
@@ -581,21 +636,24 @@ Pane {
                 
                 onCurrentIndexChanged: {
                     showCameraError = false  // Clear error when selection changes
-                    if (currentIndex <= 0) 
+                    if (currentIndex <= 0)
                         return;
                     Score.startMacro()
-                    
+
                     const camera_name = cameraPrettyNamesList[currentIndex - 1]
                     const camera_settings = cameraList[currentIndex - 1].settings
                     logger.log("Selected camera: " + camera_name)
-                    
+
+                    // Save selected camera to persistent settings
+                    appSettings.lastCameraName = camera_name
+
                     Score.removeDevice("Camera")
 
                     Score.createDevice(
                         "Camera",
                         "d615690b-f2e2-447b-b70e-a800552db69c",
                         camera_settings)
-                    
+
                     if (currentProcess) {
                         const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
                         if (inputPort) {
@@ -633,6 +691,7 @@ Pane {
                 placeholderText: "IP (e.g. 127.0.0.1)"
                 text: "127.0.0.1"
                 enabled: !runStopSwitch.checked
+                onTextChanged: appSettings.oscIpAddress = text
             }
 
             CustomTextField {
@@ -644,6 +703,7 @@ Pane {
                 text: "9000"
                 enabled: !runStopSwitch.checked
                 validator: IntValidator { bottom: 1; top: 65535 }
+                onTextChanged: appSettings.oscPortValue = text
             }
 
             // --- Expose model properties ---
