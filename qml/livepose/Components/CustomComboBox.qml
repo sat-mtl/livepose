@@ -9,6 +9,7 @@ ComboBox {
     font.pixelSize: appStyle.fontSizeBody
     
     delegate: ItemDelegate {
+        height: 25
         width: control.width
         contentItem: Text {
             text: modelData
@@ -23,7 +24,6 @@ ComboBox {
             color: highlighted ? appStyle.primaryColor : appStyle.backgroundColorSecondary
         }
     }
-    
     contentItem: Text {
         leftPadding: 12
         rightPadding: control.indicator.width + control.spacing
@@ -34,7 +34,6 @@ ComboBox {
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
-    
     background: Rectangle {
         implicitWidth: 200
         implicitHeight: appStyle.inputHeight
@@ -44,14 +43,17 @@ ComboBox {
         radius: appStyle.borderRadius
     }
     
+    
     popup: Popup {
         y: control.height
         width: control.width
+        height: Math.min(400, contentHeight) 
         implicitHeight: contentItem.implicitHeight
         padding: 1
         
         contentItem: ListView {
             clip: true
+            height: 200
             implicitHeight: contentHeight
             model: control.popup.visible ? control.delegateModel : null
             currentIndex: control.highlightedIndex
