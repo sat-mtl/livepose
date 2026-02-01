@@ -24,11 +24,17 @@ ApplicationWindow {
         property string blazeposeModelPath: ""
         property string yolov8ModelPath: ""
         property string resnetModelPath: ""
+        property string poseDetectorModelPath: ""
 
         property string resnetClassesPath: ""
 
         property string oscIpAddress: "127.0.0.1"
         property string oscPortValue: "9000"
+        
+        property int poseDetectorOutputMode: 0
+        property real poseDetectorMinConfidence: 0.5
+        property bool poseDetectorDrawSkeleton: true
+        property int poseDetectorDataFormat: 0
     }
 
     
