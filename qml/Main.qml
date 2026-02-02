@@ -21,9 +21,6 @@ ApplicationWindow {
         property string lastSelectedModel: ""
         property string lastCameraName: ""
 
-        property string blazeposeModelPath: ""
-        property string yolov8ModelPath: ""
-        property string resnetModelPath: ""
         property string poseDetectorModelPath: ""
         property string objectDetectorModelPath: ""
         property string objectDetectorClassesPath: ""
