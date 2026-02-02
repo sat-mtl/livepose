@@ -61,6 +61,20 @@ Pane {
             }
         }
     }
+    
+    property var poseDetectorWorkflows: [
+        "BlazePose",
+        "RTMPose_COCO", 
+        "RTMPose_Whole",
+        "ViTPose",
+        "YOLOPose",
+        "MediaPipeHands",
+        "FaceMesh",
+        "BlazeFace",
+        "MobileFaceNet"
+    ]
+    property var poseDetectorOutputModes: ["SkeletonOnImage", "SkeletonOnly"]
+    property var poseDetectorDataFormats: ["Raw", "XYArray", "XYZArray", "LineArray"]
 
     function updateModelPath() {
         if (!currentProcess) return
@@ -68,13 +82,13 @@ Pane {
         var filePath = modelFilePathField.text
         if (!filePath) return
         
-        var modelMap = {
-            "blazepose": blaze_Pose.model,
-            "yolov8_pose": yOLO_Pose.model,
-            "resnet": resnet_detector.model
+        var modelPort = null
+        if (currentProcess.isPoseDetector) {
+            modelPort = pose_Detector.model
+        } else if (currentProcess.isObjectDetector) {
+            modelPort = object_Detector.model
         }
         
-        var modelPort = modelMap[currentProcess.scenarioLabel]
         if (modelPort) {
             Score.setValue(modelPort, filePath)
         }
@@ -82,6 +96,25 @@ Pane {
 
     function saveAllFieldsToScore() {
         updateModelPath()
+        if (currentProcess && currentProcess.isObjectDetector && object_Detector.classes) {
+            try { Score.setValue(object_Detector.classes, classesFilePathField.text) } catch(e) { }
+        }
+        if (currentProcess && currentProcess.isPoseDetector) {
+            syncPoseDetectorSettings()
+        }
+    }
+    
+    function syncPoseDetectorSettings() {
+        if (!pose_Detector.process_object || !currentProcess || !currentProcess.isPoseDetector) return
+        try {
+            if (pose_Detector.workflow) Score.setValue(pose_Detector.workflow, currentProcess.scenarioLabel)
+            if (pose_Detector.output_Mode) Score.setValue(pose_Detector.output_Mode, poseDetectorOutputModes[outputModeSelector.currentIndex])
+            if (pose_Detector.min_Confidence) Score.setValue(pose_Detector.min_Confidence, minConfidenceSlider.value)
+            if (pose_Detector.draw_Skeleton) Score.setValue(pose_Detector.draw_Skeleton, drawSkeletonSwitch.checked)
+            if (pose_Detector.data_Format) Score.setValue(pose_Detector.data_Format, poseDetectorDataFormats[dataFormatSelector.currentIndex])
+        } catch(e) { }
+    }
+    
         
         if (currentProcess && currentProcess.scenarioLabel === "resnet" && resnet_detector.classes) {
             try {
@@ -94,27 +127,28 @@ Pane {
 
     Item {
         id: objects
-        QtObject { id: livepose_ossia_gui
-            property var process_object : Score.find("good_state");
-        }
-        
-        QtObject { id: blaze_Pose
-            property var process_object : Score.find("Blaze Pose");
+        QtObject { id: object_Detector
+            property var process_object : Score.find("Object Detector");
             property var input : Score.inlet(process_object, 0);
             property var model : Score.inlet(process_object, 1);
-            property var model_input_resolution : Score.inlet(process_object, 2);
-            property var minimum_confidence : Score.inlet(process_object, 3);
+            property var classes : Score.inlet(process_object, 2);
+            property var model_input_resolution : Score.inlet(process_object, 3);
             property var out : Score.outlet(process_object, 0);
             property var detection : Score.outlet(process_object, 1);
         }
-        
-        QtObject { id: yOLO_Pose
-            property var process_object : Score.find("YOLO Pose");
+        QtObject { id: pose_Detector
+            property var process_object : Score.find("Pose Detector");
             property var input : Score.inlet(process_object, 0);
             property var model : Score.inlet(process_object, 1);
-            property var model_input_resolution : Score.inlet(process_object, 2);
+            property var workflow : Score.inlet(process_object, 2);
+            property var output_Mode : Score.inlet(process_object, 3);
+            property var min_Confidence : Score.inlet(process_object, 4);
+            property var draw_Skeleton : Score.inlet(process_object, 5);
+            property var data_Format : Score.inlet(process_object, 6);
             property var out : Score.outlet(process_object, 0);
             property var detection : Score.outlet(process_object, 1);
+            property var geometry : Score.outlet(process_object, 2);
+        }
         }
         
         QtObject { id: resnet_detector
@@ -137,34 +171,31 @@ Pane {
      }
 
     function findAllScenarios() {
-        logger.log("Finding AI Model Scenarios")
         availableProcesses = []
-        var label = ["blazepose", "yolov8_pose", "resnet"]
-    
-        var triggerMap = {
-            "blazepose":    "blazeposetrigger",
-            "yolov8_pose":  "yolov8_posetrigger",  
-            "resnet":       "resnettrigger"
-        }
-        
-        var videoMapperMap = {
-            "blazepose":   "blazepose Video Mapper",
-            "yolov8_pose": "yolov8_pose Video Mapper",
-            "resnet":      "resnet Video Mapper"
-        }
-
-        for (var i = 0; i < label.length; i++) {
-            var id   = label[i]
-            var videoMapperId = videoMapperMap[id]
-            var proc = Score.find(videoMapperId)
-            if (proc) {
+        var poseDetectorMapper = Score.find("pose_detector Video Mapper")
+        if (poseDetectorMapper) {
+            for (var w = 0; w < poseDetectorWorkflows.length; w++) {
                 availableProcesses.push({
-                    scenarioLabel: id,
-                    videoMapperLabel: videoMapperId, 
-                    process:     proc,
-                    triggerName: triggerMap[id]
+                    scenarioLabel: poseDetectorWorkflows[w],
+                    videoMapperLabel: "pose_detector Video Mapper",
+                    process: poseDetectorMapper,
+                    triggerName: "pose_detectortrigger",
+                    isPoseDetector: true,
+                    isObjectDetector: false
                 })
             }
+        }
+        
+        var objectDetectorMapper = Score.find("object_detector Video Mapper")
+        if (objectDetectorMapper) {
+            availableProcesses.push({
+                scenarioLabel: "ResNET (Object Detection)",
+                videoMapperLabel: "object_detector Video Mapper",
+                process: objectDetectorMapper,
+                triggerName: "object_detectortrigger",
+                isPoseDetector: false,
+                isObjectDetector: true
+            })
         }
     
         var modelList = [" "]
@@ -176,44 +207,23 @@ Pane {
             backendSelector.model = modelList
             backendSelector.currentIndex = 1
             currentProcess = availableProcesses[0]
-            logger.log("Auto-selected model: " + availableProcesses[0].scenarioLabel)
         } else {
             backendSelector.model = [" "]
-            logger.log("No scenarios found")
         }
     }
 
     function enumerateCameras() {
-        logger.log("Enumerating cameras...")
-        console.log("Starting camera enumeration...")
-
         try {
-            deviceEnumerator = Score.enumerateDevices(
-                        "d615690b-f2e2-447b-b70e-a800552db69c")
-            console.log("Score.enumerateDevices returned:", deviceEnumerator)
-
+            deviceEnumerator = Score.enumerateDevices("d615690b-f2e2-447b-b70e-a800552db69c")
             deviceEnumerator.enumerate = true
-            console.log("Set enumerate to true")
-
             cameraList = []
             cameraPrettyNamesList = []
-            console.log("Devices array:", deviceEnumerator.devices)
-
             for (let dev of deviceEnumerator.devices) {
-                console.log("Found device:", dev)
-                console.log("Device protocol:", dev.protocol)
-                console.log("Device name:", dev.name)
-                logger.log("Found camera: " + dev.name)
-
                 cameraList.push(dev)
                 cameraPrettyNamesList.push(dev.category + ": " + dev.name)
             }
-
-            console.log("Final camera list:", cameraPrettyNamesList)
-
             cameraSelector.model = [" ", ...cameraPrettyNamesList]
         } catch (error) {
-            console.error("Error during camera enumeration:", error)
             logger.log("Error enumerating cameras: " + error)
         }
     }
@@ -248,18 +258,10 @@ Pane {
     }
 
     function startTriggeredScenario() {
-        if (!validateBeforeStart()) {
-            return;
-        }
+        if (!validateBeforeStart()) return;
         if (isStarting || isRunning) return;
         isStarting = true;
         saveAllFieldsToScore()
-        const scenario = currentProcess.process
-        const scenarioName = currentProcess.scenarioLabel
-        
-        logger.log(`Starting ${scenarioName} scenario`)
-        const cameraName = cameraPrettyNamesList[cameraSelector.currentIndex - 1]
-        logger.log("Using camera: " + cameraName)
 
         Score.startMacro()
 
@@ -279,7 +281,6 @@ Pane {
             Score.createOSCDevice("MyOSC", host, inPort, outPort);
 
             try { Score.createAddress("MyOSC:/skeleton", "List"); } catch (_) {}
-
             oscReady = true;
         }
 
@@ -293,24 +294,33 @@ Pane {
     }
 
     function stopCurrentProcess() {
+        var modelName = currentProcess ? currentProcess.scenarioLabel : "unknown"
         Score.stop();
         Score.startMacro();
         try { Score.removeDevice("MyOSC"); } catch(e) {}
         try { Score.removeDevice("Camera"); } catch(e) {}
         Score.endMacro();
-        // State (isRunning, isStarting, oscReady) is now managed by transport onStop signal
-        logger.log("Scenario stopped");
+        isRunning = false;
+        isStarting = false;
+        oscReady = false;
+        logger.log("Stopped: " + modelName);
+        
+        if (pendingRestart) {
+            pendingRestart = false;
+            Qt.callLater(function() {
+                if (validateBeforeStart()) startTriggeredScenario()
+            })
+        }
     }
 
     function restartIfRunning() {
-        if (runStopSwitch.checked) {
+        if (isRunning) {
             pendingRestart = true;
-            runStopSwitch.checked = false;
+            stopCurrentProcess();
         }
     }
 
     Component.onCompleted: {
-        logger.log("RunView initialized")
         enumerateCameras();
         findAllScenarios();
 
@@ -318,22 +328,29 @@ Pane {
     }
 
     function restoreSavedSettings() {
-        logger.log("Restoring saved settings...")
 
-        modelPaths["blazepose"] = appSettings.blazeposeModelPath
-        modelPaths["yolov8_pose"] = appSettings.yolov8ModelPath
-        modelPaths["resnet"] = appSettings.resnetModelPath
-        classesPaths["resnet"] = appSettings.resnetClassesPath
+        modelPaths["pose_detector"] = appSettings.poseDetectorModelPath
+        modelPaths["object_detector"] = appSettings.objectDetectorModelPath
+        classesPaths["object_detector"] = appSettings.objectDetectorClassesPath
 
         oscIpAddress.text = appSettings.oscIpAddress
         oscPort.text = appSettings.oscPortValue
+        if (appSettings.poseDetectorOutputMode >= 0 && appSettings.poseDetectorOutputMode < poseDetectorOutputModes.length) {
+            outputModeSelector.currentIndex = appSettings.poseDetectorOutputMode
+        }
+        if (appSettings.poseDetectorMinConfidence >= 0 && appSettings.poseDetectorMinConfidence <= 1) {
+            minConfidenceSlider.value = appSettings.poseDetectorMinConfidence
+        }
+        drawSkeletonSwitch.checked = appSettings.poseDetectorDrawSkeleton !== false // default to true
+        if (appSettings.poseDetectorDataFormat >= 0 && appSettings.poseDetectorDataFormat < poseDetectorDataFormats.length) {
+            dataFormatSelector.currentIndex = appSettings.poseDetectorDataFormat
+        }
 
         if (appSettings.lastSelectedModel !== "" && availableProcesses.length > 0) {
             for (var i = 0; i < availableProcesses.length; i++) {
                 if (availableProcesses[i].scenarioLabel === appSettings.lastSelectedModel) {
                     backendSelector.currentIndex = i + 1; 
                     backendSelector.updateModel(backendSelector.currentIndex);
-                    logger.log("Restored model: " + appSettings.lastSelectedModel);
                     break;
                 }
             }
@@ -343,7 +360,6 @@ Pane {
             for (var j = 0; j < cameraPrettyNamesList.length; j++) {
                 if (cameraPrettyNamesList[j] === appSettings.lastCameraName) {
                     cameraSelector.currentIndex = j + 1;
-                    logger.log("Restored camera: " + appSettings.lastCameraName);
                     break;
                 }
             }
@@ -359,60 +375,50 @@ Pane {
         contentWidth: availableWidth
 
         ColumnLayout {
-            width: parent.width
+            x: appStyle.padding
+            width: parent.width - 2 * appStyle.padding
             spacing: appStyle.spacing * 0.75
-            anchors.margins: appStyle.padding
 
             CustomLabel {
                 text: "Model Configuration"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeTitle
                 Layout.topMargin: appStyle.padding
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
             }
 
-            // --- Model Selection ---
             CustomLabel {
                 text: "Choose AI Model"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
             }
 
             CustomComboBox {
                 id: backendSelector
                 Layout.fillWidth: true
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
                 model: [" "]
                 
-                function updateModel(currentIndex)
-                {
+                function updateModel(currentIndex) {
                     restartIfRunning()
-                    showModelError = false  // Clear error when selection changes
+                    showModelError = false
                     if (currentProcess && currentProcess.scenarioLabel) {
                         var oldLabel = currentProcess.scenarioLabel
-                        if (modelFilePathField.text) {
-                            modelPaths[oldLabel] = modelFilePathField.text
-                        }
-                        if (classesFilePathField.text) {
-                            classesPaths[oldLabel] = classesFilePathField.text
-                        }
+                        var saveKey = currentProcess.isPoseDetector ? "pose_detector" : 
+                                      currentProcess.isObjectDetector ? "object_detector" : oldLabel
+                        if (modelFilePathField.text) modelPaths[saveKey] = modelFilePathField.text
+                        if (classesFilePathField.text && currentProcess.isObjectDetector) classesPaths["object_detector"] = classesFilePathField.text
                     }
                     if (currentIndex > 0) {
                         currentProcess = availableProcesses[currentIndex - 1];
                         var newLabel = currentProcess.scenarioLabel;
-                        logger.log("Selected model: " + newLabel);
-
-                        // Save selected model to persistent settings
                         appSettings.lastSelectedModel = newLabel;
-
-                        modelFilePathField.text = modelPaths[newLabel] || "";
-                        classesFilePathField.text = classesPaths[newLabel] || "";
-                    }
-                    else {
+                        var loadKey = currentProcess.isPoseDetector ? "pose_detector" : 
+                                      currentProcess.isObjectDetector ? "object_detector" : newLabel
+                        modelFilePathField.text = modelPaths[loadKey] || "";
+                        classesFilePathField.text = currentProcess.isObjectDetector ? (classesPaths["object_detector"] || "") : "";
+                        if (currentProcess.isPoseDetector && pose_Detector.workflow) {
+                            try { Score.setValue(pose_Detector.workflow, newLabel) } catch(e) { }
+                        }
+                    } else {
                         currentProcess = null;
                         modelFilePathField.text = "";
                         classesFilePathField.text = "";
@@ -422,20 +428,15 @@ Pane {
                 onCurrentIndexChanged: updateModel(currentIndex)
             }
             
-            // Validation feedback for model
             CustomLabel {
                 visible: showModelError
                 text: "Please select a model"
                 color: appStyle.errorColor
                 font.pixelSize: appStyle.fontSizeSmall
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: appStyle.padding * 2
-                Layout.rightMargin: appStyle.padding
                 visible: currentProcess !== null
                 spacing: appStyle.spacing
 
@@ -450,71 +451,28 @@ Pane {
                     CustomTextField { 
                         id: modelFilePathField
                         Layout.fillWidth: true
-                        text: ""  // QML is source of truth
+                        text: ""
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
-                        
-                        placeholderText: {
-                            if (!runView.currentProcess) {
-                                return "Select a model first..."
-                            }
-                            var modelName = runView.currentProcess.scenarioLabel
-                            if (hasValidPath) {
-                                return "Model file loaded"
-                            } else {
-                                return "/path/to/" + modelName + "_model.onnx"
-                            }
-                        }
+                        placeholderText: "Select ONNX model file..."
                         
                         property var currentModelPort: {
                             if (!runView.currentProcess) return null
-                            var scenario = runView.currentProcess.scenarioLabel
                             try {
-                                if (scenario === "blazepose" && typeof blaze_Pose !== "undefined" && blaze_Pose) return blaze_Pose.model
-                                if (scenario === "yolov8_pose" && typeof yOLO_Pose !== "undefined" && yOLO_Pose) return yOLO_Pose.model
-                                if (scenario === "resnet" && typeof resnet_detector !== "undefined" && resnet_detector) return resnet_detector.model
-                            } catch(e) {
-                                console.log("Error accessing model port:", e)
-                            }
+                                if (runView.currentProcess.isPoseDetector && pose_Detector) return pose_Detector.model
+                                if (runView.currentProcess.isObjectDetector && object_Detector) return object_Detector.model
+                            } catch(e) { }
                             return null
                         }
                         
                         onTextChanged: {
                             showModelFileError = false
                             if (currentModelPort) {
-                                try {
-                                    Score.setValue(currentModelPort, text)
-                                    if (runView.logger && text !== "") {
-                                        runView.logger.log("Model file updated: " + text)
-                                    }
-                                } catch(e) {
-                                    console.log("Error setting model file:", e)
-                                }
+                                try { Score.setValue(currentModelPort, text) } catch(e) { }
                             }
-
-                            // Save model path to persistent settings
                             if (runView.currentProcess) {
-                                var scenario = runView.currentProcess.scenarioLabel
-                                if (scenario === "blazepose") {
-                                    appSettings.blazeposeModelPath = text
-                                } else if (scenario === "yolov8_pose") {
-                                    appSettings.yolov8ModelPath = text
-                                } else if (scenario === "resnet") {
-                                    appSettings.resnetModelPath = text
-                                }
-                            }
-                        }
-                        
-                        onCurrentModelPortChanged: {
-                            if (currentModelPort) {
-                                Qt.callLater(function() {
-                                    try {
-                                        // Push the QML value to Score (will be empty string on model switch)
-                                        Score.setValue(currentModelPort, text)
-                                    } catch(e) {
-                                        console.log("Error syncing model to Score:", e)
-                                    }
-                                })
+                                if (runView.currentProcess.isPoseDetector) appSettings.poseDetectorModelPath = text
+                                else if (runView.currentProcess.isObjectDetector) appSettings.objectDetectorModelPath = text
                             }
                         }
                     }
@@ -532,14 +490,9 @@ Pane {
                     title: "Select ONNX Model File"
                     nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
                     onAccepted: {
-                        if (!selectedFile) {
-                            console.log("No file selected")
-                            return
-                        }
+                        if (!selectedFile) return
                         var filePath = selectedFile.toString()
-                        if (filePath.startsWith("file://")) {
-                            filePath = filePath.substring(7)
-                        }
+                        if (filePath.startsWith("file://")) filePath = filePath.substring(7)
                         modelFilePathField.text = filePath
                     }
                 }
@@ -550,63 +503,129 @@ Pane {
                     color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
                 }
+                                
+                CustomLabel {
+                    text: "Output Mode"
+                    font.bold: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                }
+                
+                CustomComboBox {
+                    id: outputModeSelector
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    model: poseDetectorOutputModes
+                    currentIndex: 0
+                    
+                    onCurrentIndexChanged: {
+                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.output_Mode) {
+                            try {
+                                var modeValue = poseDetectorOutputModes[currentIndex]
+                                Score.setValue(pose_Detector.output_Mode, modeValue)
+                                appSettings.poseDetectorOutputMode = currentIndex
+                            } catch(e) { }
+                        }
+                    }
+                }
+                
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    spacing: appStyle.spacing
+                    
+                    CustomLabel {
+                        text: "Confidence: " + minConfidenceSlider.value.toFixed(2)
+                        font.bold: true
+                    }
+                    
+                    Slider {
+                        id: minConfidenceSlider
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 80
+                        from: 0.0
+                        to: 1.0
+                        value: 0.5
+                        stepSize: 0.01
+                        onValueChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.min_Confidence) {
+                                try {
+                                    Score.setValue(pose_Detector.min_Confidence, value)
+                                    appSettings.poseDetectorMinConfidence = value
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                    
+                    CheckBox {
+                        id: drawSkeletonSwitch
+                        text: "Draw Skeleton"
+                        checked: true
+                        Layout.leftMargin: appStyle.spacing
+                        onCheckedChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Skeleton) {
+                                try {
+                                    Score.setValue(pose_Detector.draw_Skeleton, checked)
+                                    appSettings.poseDetectorDrawSkeleton = checked
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                }
+                
+                CustomLabel {
+                    text: "Data Format"
+                    font.bold: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                }
+                
+                CustomComboBox {
+                    id: dataFormatSelector
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    model: poseDetectorDataFormats
+                    currentIndex: 0
+                    
+                    onCurrentIndexChanged: {
+                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.data_Format) {
+                            try {
+                                var formatValue = poseDetectorDataFormats[currentIndex]
+                                Score.setValue(pose_Detector.data_Format, formatValue)
+                                appSettings.poseDetectorDataFormat = currentIndex
+                            } catch(e) { }
+                        }
+                    }
+                }
 
                 CustomLabel {
                     text: "Classes File (.txt)"
                     font.bold: true
-                    visible: currentProcess && currentProcess.scenarioLabel === "resnet" // only visible for resnet
+                    visible: currentProcess && currentProcess.isObjectDetector
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.scenarioLabel === "resnet"
+                    visible: currentProcess && currentProcess.isObjectDetector
                     
                     CustomTextField {
                         id: classesFilePathField
                         Layout.fillWidth: true
-                        text: ""  // QML is source of truth
+                        text: ""
                         
                         property bool hasValidPath: text !== "" && text.indexOf(".txt") >= 0
-                        
-                        placeholderText: "/path/to/classes.txt"
+                        placeholderText: "Select classes file..."
                         
                         property var currentClassesPort: {
-                            if (!runView.currentProcess || runView.currentProcess.scenarioLabel !== "resnet") return null
-                            try {
-                                if (typeof resnet_detector !== "undefined" && resnet_detector) return resnet_detector.classes
-                            } catch(e) {
-                                console.log("Error accessing classes port:", e)
-                            }
+                            if (!runView.currentProcess || !runView.currentProcess.isObjectDetector) return null
+                            try { if (object_Detector) return object_Detector.classes } catch(e) { }
                             return null
                         }
                         
                         onTextChanged: {
                             showClassesFileError = false
                             if (currentClassesPort) {
-                                try {
-                                    Score.setValue(currentClassesPort, text)
-                                    if (runView.logger && text !== "") {
-                                        runView.logger.log("Classes file updated: " + text)
-                                    }
-                                } catch(e) {
-                                    console.log("Error setting classes file:", e)
-                                }
+                                try { Score.setValue(currentClassesPort, text) } catch(e) { }
                             }
-
-                            // Save classes path to persistent settings
-                            appSettings.resnetClassesPath = text
-                        }
-                        
-                        onCurrentClassesPortChanged: {
-                            if (currentClassesPort) {
-                                Qt.callLater(function() {
-                                    try {
-                                        Score.setValue(currentClassesPort, text)
-                                    } catch(e) {
-                                        console.log("Error syncing classes to Score:", e)
-                                    }
-                                })
-                            }
+                            appSettings.objectDetectorClassesPath = text
                         }
                     }
                     
@@ -619,7 +638,7 @@ Pane {
                 }
                 
                 CustomLabel {
-                    visible: showClassesFileError && currentProcess && currentProcess.scenarioLabel === "resnet"
+                    visible: showClassesFileError && currentProcess && currentProcess.isObjectDetector
                     text: "Please select a classes file"
                     color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
@@ -630,17 +649,19 @@ Pane {
                     title: "Select Classes File"
                     nameFilters: ["Text Files (*.txt)", "All Files (*)"]
                     onAccepted: {
-                        if (!selectedFile) {
-                            console.log("No file selected")
-                            return
-                        }
+                        if (!selectedFile) return
                         var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
                         classesFilePathField.text = filePath
                     }
                 }
             }
 
-            // --- Camera Input ---
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: appStyle.separatorColor
+            }
+
             CustomLabel {
                 text: "Select Camera"
                 font.bold: true
@@ -664,23 +685,12 @@ Pane {
 
                     const camera_name = cameraPrettyNamesList[currentIndex - 1]
                     const camera_settings = cameraList[currentIndex - 1].settings
-                    logger.log("Selected camera: " + camera_name)
-
-                    // Save selected camera to persistent settings
                     appSettings.lastCameraName = camera_name
-
                     Score.removeDevice("Camera")
-
-                    Score.createDevice(
-                        "Camera",
-                        "d615690b-f2e2-447b-b70e-a800552db69c",
-                        camera_settings)
-
+                    Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
                     if (currentProcess) {
                         const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
-                        if (inputPort) {
-                            Score.setAddress(inputPort, "Camera:/")
-                        }
+                        if (inputPort) Score.setAddress(inputPort, "Camera:/")
                     }
                     Score.endMacro()
                 }
@@ -697,12 +707,17 @@ Pane {
             }
 
             // --- Output ---
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: appStyle.separatorColor
+            }
+
             CustomLabel {
                 text: "OSC Output Settings"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
             }
 
             CustomTextField {
@@ -729,30 +744,31 @@ Pane {
             }
 
             // --- Expose model properties ---
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: appStyle.separatorColor
+            }
+
             CustomLabel {
                 text: "Video Preview"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
             }
 
             Rectangle {
                 id: videoPreviewFrame
                 Layout.fillWidth: true
-                Layout.preferredHeight: width / aspectRatio  // Height grows based on width
+                Layout.preferredHeight: width / aspectRatio
                 Layout.minimumWidth: 360
                 Layout.minimumHeight: 200
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
                 color: "transparent"
                 radius: appStyle.borderRadius
                 border.color: appStyle.borderColor
                 border.width: 1
                 
                 readonly property real aspectRatio: 16 / 9
-                
-                // Inner container that clips content to rounded corners
                 Rectangle {
                     id: videoPreviewClip
                     anchors.fill: parent
@@ -769,15 +785,13 @@ Pane {
                         height: 720
                         process: currentProcess ? currentProcess.videoMapperLabel : "" 
                         port: 0
-                        visible: runStopSwitch.checked
+                        visible: isRunning
                     }
                     ShaderEffectSource {
                         anchors.fill: parent
                         sourceItem: textureSource
                         hideSource: true
                     }
-                    
-                    // Placeholder when video is not showing
                     Text {
                         anchors.centerIn: parent
                         text: {
@@ -794,7 +808,7 @@ Pane {
                         color: appStyle.textColorSecondary
                         font.family: appStyle.fontFamily
                         font.pixelSize: appStyle.fontSizeBody
-                        visible: !runStopSwitch.checked
+                        visible: !isRunning
                     }
                 }
             }
@@ -803,8 +817,6 @@ Pane {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
                 Layout.bottomMargin: appStyle.padding
 
                 CustomSwitch {
@@ -815,13 +827,6 @@ Pane {
                         if (checked) {
                             if (validateBeforeStart()) {
                                 startTriggeredScenario()
-                            } else {
-                                // Validation failed, uncheck the switch and show feedback
-                                runStopSwitch.checked = false
-                            }
-                        } else {
-                            if (isRunning) {
-                                stopCurrentProcess()
                             }
                         }
                     }
@@ -829,17 +834,11 @@ Pane {
 
                 CustomLabel {
                     text: {
-                        if (!currentProcess) {
-                            return "Please select a model"
-                        } else if (!modelFilePathField.hasValidPath) {
-                            return "Please select an ONNX model file"
-                        } else if (cameraSelector.currentIndex <= 0) {
-                            return "Please select a camera"
-                        } else if (isRunning) {
-                            return "Current model running: " + currentProcess.scenarioLabel
-                        } else {
-                            return "Ready to start: " + currentProcess.scenarioLabel
-                        }
+                        if (!currentProcess) return "Please select a model"
+                        if (!modelFilePathField.hasValidPath) return "Please select an ONNX model file"
+                        if (cameraSelector.currentIndex <= 0) return "Please select a camera"
+                        if (isRunning) return "Running: " + currentProcess.scenarioLabel
+                        return "Ready: " + currentProcess.scenarioLabel
                     }
                 }
             }
