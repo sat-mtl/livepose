@@ -25,11 +25,13 @@ ApplicationWindow {
         property string yolov8ModelPath: ""
         property string resnetModelPath: ""
         property string poseDetectorModelPath: ""
-
-        property string resnetClassesPath: ""
+        property string objectDetectorModelPath: ""
+        property string objectDetectorClassesPath: ""
 
         property string oscIpAddress: "127.0.0.1"
         property string oscPortValue: "9000"
+        property string lastVideoPath: ""
+        property string lastInputSource: "camera"
         
         property int poseDetectorOutputMode: 0
         property real poseDetectorMinConfidence: 0.5

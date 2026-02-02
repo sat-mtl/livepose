@@ -32,35 +32,8 @@ Pane {
     property bool showClassesFileError: false
     property var modelPaths: ({})
     property var classesPaths: ({})
-
-    // Connect to Score transport signals for play/stop events
-    Connections {
-        target: Score.transport()
-
-        function onPlay() {
-            console.log("[Transport] Play signal received");
-            isRunning = true;
-            isStarting = false;
-            // Sync switch state (in case playback started externally)
-            runStopSwitch.checked = true;
-        }
-
-        function onStop() {
-            console.log("[Transport] Stop signal received");
-            isRunning = false;
-            isStarting = false;
-            oscReady = false;
-
-            // If a restart was requested, start again now that stop is confirmed
-            if (pendingRestart) {
-                pendingRestart = false;
-                runStopSwitch.checked = true;
-            } else {
-                // Sync switch state (in case playback stopped externally)
-                runStopSwitch.checked = false;
-            }
-        }
-    }
+    property string inputSource: "camera"
+    property string videoFilePath: ""
     
     property var poseDetectorWorkflows: [
         "BlazePose",
@@ -115,14 +88,23 @@ Pane {
         } catch(e) { }
     }
     
-        
-        if (currentProcess && currentProcess.scenarioLabel === "resnet" && resnet_detector.classes) {
-            try {
-                Score.setValue(resnet_detector.classes, classesFilePathField.text)
-            } catch(e) {
-                console.log("Error saving classes file:", e)
-            }
-        }
+    function updateInputSourceMixer() {
+        var cameraAlpha = inputSource === "camera" ? 1.0 : 0.0
+        var videoAlpha = inputSource === "video" ? 1.0 : 0.0
+        try {
+            if (pose_video_Mixer.alpha1) Score.setValue(pose_video_Mixer.alpha1, cameraAlpha)
+            if (pose_video_Mixer.alpha2) Score.setValue(pose_video_Mixer.alpha2, videoAlpha)
+            if (obj_video_Mixer.alpha1) Score.setValue(obj_video_Mixer.alpha1, cameraAlpha)
+            if (obj_video_Mixer.alpha2) Score.setValue(obj_video_Mixer.alpha2, videoAlpha)
+        } catch(e) { }
+    }
+    
+    function setVideoPath(path) {
+        if (path === "") return
+        try {
+            if (pose_video.process_object) pose_video.process_object.path = path
+            if (obj_video.process_object) obj_video.process_object.path = path
+        } catch(e) { }
     }
 
     Item {
@@ -149,16 +131,21 @@ Pane {
             property var detection : Score.outlet(process_object, 1);
             property var geometry : Score.outlet(process_object, 2);
         }
+        QtObject { id: pose_video
+            property var process_object : Score.find("pose video");
         }
-        
-        QtObject { id: resnet_detector
-            property var process_object : Score.find("Resnet detector");
-            property var input : Score.inlet(process_object, 0);
-            property var model : Score.inlet(process_object, 1);
-            property var classes : Score.inlet(process_object, 2);
-            property var model_input_resolution : Score.inlet(process_object, 3);
-            property var out : Score.outlet(process_object, 0);
-            property var detection : Score.outlet(process_object, 1);
+        QtObject { id: obj_video
+            property var process_object : Score.find("obj video");
+        }
+        QtObject { id: pose_video_Mixer
+            property var process_object : Score.find("Pose Video Mixer");
+            property var alpha1 : Score.inlet(process_object, 8);
+            property var alpha2 : Score.inlet(process_object, 9);
+        }
+        QtObject { id: obj_video_Mixer
+            property var process_object : Score.find("Obj Video Mixer");
+            property var alpha1 : Score.inlet(process_object, 8);
+            property var alpha2 : Score.inlet(process_object, 9);
         }
     }
 
@@ -264,13 +251,17 @@ Pane {
         saveAllFieldsToScore()
 
         Score.startMacro()
-
-        // Camera is required (validated above)
-        const cameraSettings = cameraList[cameraSelector.currentIndex - 1].settings
-        Score.removeDevice("Camera")
-        Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", cameraSettings)
-        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel);
-        if (inputPort) Score.setAddress(inputPort, "Camera:/")
+        if (inputSource === "camera" && cameraSelector.currentIndex > 0) {
+            const cameraSettings = cameraList[cameraSelector.currentIndex - 1].settings
+            Score.removeDevice("Camera")
+            Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", cameraSettings)
+            const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel);
+            if (inputPort) Score.setAddress(inputPort, "Camera:/")
+        }
+        if (inputSource === "video" && videoFilePath !== "") {
+            setVideoPath(videoFilePath)
+        }
+        updateInputSourceMixer()
 
         if (!oscReady) {
             try { Score.removeDevice("MyOSC"); } catch(e) {}
@@ -289,8 +280,10 @@ Pane {
         const trigger = Score.find(currentProcess.triggerName);
         if (trigger && typeof trigger.triggeredByGui === 'function')
             trigger.triggeredByGui();
-        // State (isRunning, isStarting) is now managed by transport onPlay signal
-        logger.log("Scenario started successfully");
+        isRunning = true;
+        isStarting = false;
+        var inputDesc = inputSource === "camera" ? cameraPrettyNamesList[cameraSelector.currentIndex - 1] : videoFilePath
+        logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + oscIpAddress.text + ":" + oscPort.text);
     }
 
     function stopCurrentProcess() {
@@ -335,6 +328,8 @@ Pane {
 
         oscIpAddress.text = appSettings.oscIpAddress
         oscPort.text = appSettings.oscPortValue
+        if (appSettings.lastInputSource !== "") inputSource = appSettings.lastInputSource
+        if (appSettings.lastVideoPath !== "") videoFilePath = appSettings.lastVideoPath
         if (appSettings.poseDetectorOutputMode >= 0 && appSettings.poseDetectorOutputMode < poseDetectorOutputModes.length) {
             outputModeSelector.currentIndex = appSettings.poseDetectorOutputMode
         }
@@ -663,24 +658,51 @@ Pane {
             }
 
             CustomLabel {
-                text: "Select Camera"
+                text: "Input Source"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeSubtitle
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
+            }
+            
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: appStyle.spacing
+                
+                Button {
+                    text: "Camera"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    font.bold: inputSource === "camera"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        inputSource = "camera"
+                        appSettings.lastInputSource = "camera"
+                        updateInputSourceMixer()
+                    }
+                }
+                
+                Button {
+                    text: "Video File"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    font.bold: inputSource === "video"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        inputSource = "video"
+                        appSettings.lastInputSource = "video"
+                        updateInputSourceMixer()
+                    }
+                }
             }
 
             CustomComboBox {
                 id: cameraSelector
                 Layout.fillWidth: true
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
+                visible: inputSource === "camera"
                 model: [" ", ...cameraPrettyNamesList]
                 
                 onCurrentIndexChanged: {
-                    showCameraError = false  // Clear error when selection changes
-                    if (currentIndex <= 0)
-                        return;
+                    showCameraError = false
+                    if (currentIndex <= 0) return;
                     Score.startMacro()
 
                     const camera_name = cameraPrettyNamesList[currentIndex - 1]
@@ -696,17 +718,55 @@ Pane {
                 }
             }
             
-            // Validation feedback for camera
             CustomLabel {
-                visible: showCameraError
+                visible: showCameraError && inputSource === "camera"
                 text: "Please select a camera"
                 color: appStyle.errorColor
                 font.pixelSize: appStyle.fontSizeSmall
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
             }
-
-            // --- Output ---
+            
+            RowLayout {
+                Layout.fillWidth: true
+                visible: inputSource === "video"
+                
+                CustomTextField {
+                    id: videoFilePathField
+                    Layout.fillWidth: true
+                    placeholderText: "Select video file..."
+                    text: videoFilePath
+                    onTextChanged: {
+                        videoFilePath = text
+                        setVideoPath(text)
+                        appSettings.lastVideoPath = text
+                    }
+                }
+                
+                Button {
+                    text: "Browse"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    onClicked: videoFileDialog.open()
+                }
+            }
+            
+            FileDialog {
+                id: videoFileDialog
+                title: "Select Video File"
+                nameFilters: ["Video Files (*.mp4 *.avi *.mov *.mkv *.webm)", "All Files (*)"]
+                onAccepted: {
+                    if (!selectedFile) return
+                    var filePath = selectedFile.toString()
+                    if (filePath.startsWith("file://")) filePath = filePath.substring(7)
+                    videoFilePathField.text = filePath
+                }
+            }
+            
+            CustomLabel {
+                visible: inputSource === "video" && videoFilePath === ""
+                text: "Please select a video file"
+                color: appStyle.errorColor
+                font.pixelSize: appStyle.fontSizeSmall
+            }
 
             Rectangle {
                 Layout.fillWidth: true
