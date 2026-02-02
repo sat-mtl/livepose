@@ -149,7 +149,6 @@ Pane {
         }
     }
 
-    // get the video in port via the video mapper
     function getVideoInPortViaMapper(videoMapperLabel) {
          if (!videoMapperLabel) return null;
          var videoMapper = Score.find(videoMapperLabel);
@@ -222,23 +221,27 @@ Pane {
         showClassesFileError = false
         
         if (!currentProcess || !currentProcess.process) {
-            logger.log("Error: Please select a model first")
+            logger.log("Cannot start: No AI model selected")
             showModelError = true
             return false
         }
         if (!modelFilePathField.hasValidPath) {
-            logger.log("Error: Please select an ONNX model file")
+            logger.log("Cannot start: No ONNX model file selected")
             showModelFileError = true
             return false
         }
-        if (currentProcess.scenarioLabel === "resnet" && !classesFilePathField.hasValidPath) {
-            logger.log("Error: Please select a classes file")
+        if (currentProcess.isObjectDetector && !classesFilePathField.hasValidPath) {
+            logger.log("Cannot start: No classes file selected for object detection")
             showClassesFileError = true
             return false
         }
-        if (cameraSelector.currentIndex <= 0) {
-            logger.log("Error: Please select a camera first")
+        if (inputSource === "camera" && cameraSelector.currentIndex <= 0) {
+            logger.log("Cannot start: No camera selected")
             showCameraError = true
+            return false
+        }
+        if (inputSource === "video" && videoFilePath === "") {
+            logger.log("Cannot start: No video file selected")
             return false
         }
         return true
@@ -265,12 +268,10 @@ Pane {
 
         if (!oscReady) {
             try { Score.removeDevice("MyOSC"); } catch(e) {}
-            const host   = (oscIpAddress.text || "127.0.0.1").trim();
+            const host = (oscIpAddress.text || "127.0.0.1").trim();
             const outPort = parseInt(oscPort.text) || 9000;
-            const inPort  = (outPort === 9000 ? 9001 : outPort + 1);
-            console.log(`[OSC] createOSCDevice MyOSC → ${host} (in:${inPort} out:${outPort})`);
+            const inPort = (outPort === 9000 ? 9001 : outPort + 1);
             Score.createOSCDevice("MyOSC", host, inPort, outPort);
-
             try { Score.createAddress("MyOSC:/skeleton", "List"); } catch (_) {}
             oscReady = true;
         }
@@ -704,7 +705,6 @@ Pane {
                     showCameraError = false
                     if (currentIndex <= 0) return;
                     Score.startMacro()
-
                     const camera_name = cameraPrettyNamesList[currentIndex - 1]
                     const camera_settings = cameraList[currentIndex - 1].settings
                     appSettings.lastCameraName = camera_name
@@ -780,30 +780,29 @@ Pane {
                 font.pixelSize: appStyle.fontSizeSubtitle
             }
 
-            CustomTextField {
-                id: oscIpAddress
+            RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
-                placeholderText: "IP (e.g. 127.0.0.1)"
-                text: "127.0.0.1"
-                enabled: !runStopSwitch.checked
-                onTextChanged: appSettings.oscIpAddress = text
-            }
+                spacing: appStyle.spacing
+                
+                CustomTextField {
+                    id: oscIpAddress
+                    Layout.fillWidth: true
+                    placeholderText: "IP (e.g. 127.0.0.1)"
+                    text: "127.0.0.1"
+                    enabled: !isRunning
+                    onTextChanged: appSettings.oscIpAddress = text
+                }
 
-            CustomTextField {
-                id: oscPort
-                Layout.fillWidth: true
-                Layout.leftMargin: appStyle.padding
-                Layout.rightMargin: appStyle.padding
-                placeholderText: "Port (e.g. 9000)"
-                text: "9000"
-                enabled: !runStopSwitch.checked
-                validator: IntValidator { bottom: 1; top: 65535 }
-                onTextChanged: appSettings.oscPortValue = text
+                CustomTextField {
+                    id: oscPort
+                    Layout.fillWidth: true
+                    placeholderText: "Port (e.g. 9000)"
+                    text: "9000"
+                    enabled: !isRunning
+                    validator: IntValidator { bottom: 1; top: 65535 }
+                    onTextChanged: appSettings.oscPortValue = text
+                }
             }
-
-            // --- Expose model properties ---
 
             Rectangle {
                 Layout.fillWidth: true
@@ -879,12 +878,15 @@ Pane {
                 Layout.fillWidth: true
                 Layout.bottomMargin: appStyle.padding
 
-                CustomSwitch {
-                    id: runStopSwitch
-                    text: runStopSwitch.checked ? "Running" : "Stopped"
-                    // Always enabled - validation will show feedback
-                    onCheckedChanged: {
-                        if (checked) {
+                Button {
+                    id: startStopButton
+                    text: isRunning ? "Stop" : "Start"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    onClicked: {
+                        if (isRunning) {
+                            stopCurrentProcess()
+                        } else {
                             if (validateBeforeStart()) {
                                 startTriggeredScenario()
                             }
