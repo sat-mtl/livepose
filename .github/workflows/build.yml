@@ -39,7 +39,6 @@ jobs:
           score-file: "score/app.score"
           release-tag: "continuous"
           platforms: "${{ matrix.platform }}"
-          cmake-options: "-DSCORE_ENABLE_ADDONS=score-addon-onnx -DSCORE_DISABLE_PLUGINS=score-plugin-faust,score-plugin-jit,score-plugin-vst,score-plugin-vst3,score-plugin-clap,score-plugin-lv2,score-plugin-avnd,score-plugin-pd,score-plugin-ysfx,score-plugin-packagemanager,score-plugin-controlsurface"
           # App metadata
           app-organization: "SAT"
           app-domain: "sat.qc.ca"
