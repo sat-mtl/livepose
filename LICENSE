@@ -1,9 +1,10 @@
-Copyright: ossia.io / all the contributors / LaBRI / SCRIME / Blue Yeti
+Copyright: SAT
 
-ossia score use a lot of third-party software - see their licenses in either 
-the submodules of this repository or the about screen of ossia score.
+LivePose uses third-party software - see their licenses on the submodules 
+of this repository or submodules of ossia score.
 
-Not included under the submodules but still used by the runtime are : 
+Software included under the submodules, but that may still be used by the runtime are : 
+
 - FFMPEG (used under GPLv3)
 - Qt (used under LGPLv3) and all its dependent libraries - freetype, harfbuzz, libpng, etc.
 - PortAudio (http://www.portaudio.com/license.html)
