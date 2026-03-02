@@ -487,7 +487,7 @@ Pane {
                     nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
                     onAccepted: {
                         if (!selectedFile) return
-                        var filePath = selectedFile.toString()
+                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
                         if (filePath.startsWith("file://")) filePath = filePath.substring(7)
                         modelFilePathField.text = filePath
                     }
