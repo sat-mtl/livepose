@@ -1,0 +1,15 @@
+[book]
+title = "LivePose documentation"
+description = "Documentation for LivePose - pose, blob and object detection software"
+authors = ["Société des Arts Technologiques"]
+language = "en"
+src = "docs"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "auto"
+preferred-dark-theme = "navy"
+git-repository-url = "https://github.com/sat-mtl/livepose"
+site-url = "/livepose/"
