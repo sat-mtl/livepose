@@ -42,7 +42,14 @@ jobs:
         with:
           score-repo: "ossia/score"
           score-ref: "feature/detector"
-          cmake-options: "-DSCORE_ENABLE_ADDONS=score-addon-onnx"
+          # Keep gfx (video preview/TextureSource), media (camera/video) and
+          # avnd (the onnx Pose Detector is an Avendish/halp process). Disable
+          # everything livepose doesn't use to slim the build.
+          cmake-options: >-
+            -DSCORE_ENABLE_ADDONS=score-addon-onnx
+            -DSCORE_DISABLE_PLUGINS=score-plugin-faust,score-plugin-jit,score-plugin-vst,score-plugin-vst3,score-plugin-clap,score-plugin-lv2,score-plugin-pd,score-plugin-ysfx,score-plugin-packagemanager,score-plugin-controlsurface,score-plugin-spline3d,score-plugin-recording,score-plugin-nodal,score-plugin-spline,score-plugin-mapping
+            -DSCORE_QT_PLUGINS_NO_QTQUICK3D=1
+            -DSCORE_QT_PLUGINS_NO_IMAGEFORMATS=1
           target-arch: ${{ matrix.target-arch || '' }}
           macos-certificate-base64: ${{ secrets.MAC_CERT_B64 }}
           macos-certificate-password: ${{ secrets.MAC_CERT_PASSWORD }}
