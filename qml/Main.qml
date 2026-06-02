@@ -34,6 +34,11 @@ ApplicationWindow {
         property real poseDetectorMinConfidence: 0.5
         property bool poseDetectorDrawSkeleton: true
         property int poseDetectorDataFormat: 0
+
+        property string poseDetectorDetectionModelPath: ""
+        property bool poseDetectorTrackROI: true
+        property bool poseDetectorSmoothing: true
+        property real poseDetectorSmoothingAmount: 0.5
     }
 
     

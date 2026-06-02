@@ -81,10 +81,14 @@ Pane {
         if (!pose_Detector.process_object || !currentProcess || !currentProcess.isPoseDetector) return
         try {
             if (pose_Detector.workflow) Score.setValue(pose_Detector.workflow, currentProcess.scenarioLabel)
+            if (pose_Detector.det_Model) Score.setValue(pose_Detector.det_Model, detectionModelFilePathField.text)
             if (pose_Detector.output_Mode) Score.setValue(pose_Detector.output_Mode, poseDetectorOutputModes[outputModeSelector.currentIndex])
             if (pose_Detector.min_Confidence) Score.setValue(pose_Detector.min_Confidence, minConfidenceSlider.value)
             if (pose_Detector.draw_Skeleton) Score.setValue(pose_Detector.draw_Skeleton, drawSkeletonSwitch.checked)
             if (pose_Detector.data_Format) Score.setValue(pose_Detector.data_Format, poseDetectorDataFormats[dataFormatSelector.currentIndex])
+            if (pose_Detector.track_ROI) Score.setValue(pose_Detector.track_ROI, trackROISwitch.checked)
+            if (pose_Detector.smoothing) Score.setValue(pose_Detector.smoothing, smoothingSwitch.checked)
+            if (pose_Detector.smoothing_Amount) Score.setValue(pose_Detector.smoothing_Amount, smoothingAmountSlider.value)
         } catch(e) { }
     }
     
@@ -122,11 +126,15 @@ Pane {
             property var process_object : Score.find("Pose Detector");
             property var input : Score.inlet(process_object, 0);
             property var model : Score.inlet(process_object, 1);
-            property var workflow : Score.inlet(process_object, 2);
-            property var output_Mode : Score.inlet(process_object, 3);
-            property var min_Confidence : Score.inlet(process_object, 4);
-            property var draw_Skeleton : Score.inlet(process_object, 5);
-            property var data_Format : Score.inlet(process_object, 6);
+            property var det_Model : Score.inlet(process_object, 2);
+            property var workflow : Score.inlet(process_object, 3);
+            property var output_Mode : Score.inlet(process_object, 4);
+            property var min_Confidence : Score.inlet(process_object, 5);
+            property var draw_Skeleton : Score.inlet(process_object, 6);
+            property var data_Format : Score.inlet(process_object, 7);
+            property var track_ROI : Score.inlet(process_object, 8);
+            property var smoothing : Score.inlet(process_object, 9);
+            property var smoothing_Amount : Score.inlet(process_object, 10);
             property var out : Score.outlet(process_object, 0);
             property var detection : Score.outlet(process_object, 1);
             property var geometry : Score.outlet(process_object, 2);
@@ -340,6 +348,13 @@ Pane {
         drawSkeletonSwitch.checked = appSettings.poseDetectorDrawSkeleton !== false // default to true
         if (appSettings.poseDetectorDataFormat >= 0 && appSettings.poseDetectorDataFormat < poseDetectorDataFormats.length) {
             dataFormatSelector.currentIndex = appSettings.poseDetectorDataFormat
+        }
+
+        detectionModelFilePathField.text = appSettings.poseDetectorDetectionModelPath
+        trackROISwitch.checked = appSettings.poseDetectorTrackROI !== false // default to true
+        smoothingSwitch.checked = appSettings.poseDetectorSmoothing !== false // default to true
+        if (appSettings.poseDetectorSmoothingAmount >= 0 && appSettings.poseDetectorSmoothingAmount <= 1) {
+            smoothingAmountSlider.value = appSettings.poseDetectorSmoothingAmount
         }
 
         if (appSettings.lastSelectedModel !== "" && availableProcesses.length > 0) {
@@ -580,7 +595,7 @@ Pane {
                     visible: currentProcess && currentProcess.isPoseDetector
                     model: poseDetectorDataFormats
                     currentIndex: 0
-                    
+
                     onCurrentIndexChanged: {
                         if (currentProcess && currentProcess.isPoseDetector && pose_Detector.data_Format) {
                             try {
@@ -588,6 +603,123 @@ Pane {
                                 Score.setValue(pose_Detector.data_Format, formatValue)
                                 appSettings.poseDetectorDataFormat = currentIndex
                             } catch(e) { }
+                        }
+                    }
+                }
+
+                CustomLabel {
+                    text: "Detection Model (optional, two-stage)"
+                    font.bold: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+
+                    CustomTextField {
+                        id: detectionModelFilePathField
+                        Layout.fillWidth: true
+                        text: ""
+                        placeholderText: "Optional stage-1 detector ONNX (empty = single-stage)..."
+
+                        onTextChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.det_Model) {
+                                try { Score.setValue(pose_Detector.det_Model, text) } catch(e) { }
+                            }
+                            appSettings.poseDetectorDetectionModelPath = text
+                        }
+                    }
+
+                    Button {
+                        text: "Browse"
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        onClicked: detectionModelFileDialog.open()
+                    }
+
+                    Button {
+                        text: "Clear"
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        visible: detectionModelFilePathField.text !== ""
+                        onClicked: detectionModelFilePathField.text = ""
+                    }
+                }
+
+                FileDialog {
+                    id: detectionModelFileDialog
+                    title: "Select Detection Model (ONNX)"
+                    nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
+                    onAccepted: {
+                        if (!selectedFile) return
+                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
+                        if (filePath.startsWith("file://")) filePath = filePath.substring(7)
+                        detectionModelFilePathField.text = filePath
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    spacing: appStyle.spacing
+
+                    CheckBox {
+                        id: trackROISwitch
+                        text: "Track ROI"
+                        checked: true
+                        onCheckedChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
+                                try {
+                                    Score.setValue(pose_Detector.track_ROI, checked)
+                                    appSettings.poseDetectorTrackROI = checked
+                                } catch(e) { }
+                            }
+                        }
+                    }
+
+                    CheckBox {
+                        id: smoothingSwitch
+                        text: "Smoothing"
+                        checked: true
+                        Layout.leftMargin: appStyle.spacing
+                        onCheckedChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing) {
+                                try {
+                                    Score.setValue(pose_Detector.smoothing, checked)
+                                    appSettings.poseDetectorSmoothing = checked
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    spacing: appStyle.spacing
+
+                    CustomLabel {
+                        text: "Smoothing: " + smoothingAmountSlider.value.toFixed(2)
+                        font.bold: true
+                    }
+
+                    Slider {
+                        id: smoothingAmountSlider
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 80
+                        enabled: smoothingSwitch.checked
+                        from: 0.0
+                        to: 1.0
+                        value: 0.5
+                        stepSize: 0.01
+                        onValueChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing_Amount) {
+                                try {
+                                    Score.setValue(pose_Detector.smoothing_Amount, value)
+                                    appSettings.poseDetectorSmoothingAmount = value
+                                } catch(e) { }
+                            }
                         }
                     }
                 }
