@@ -30,6 +30,26 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Build ossia score from the pose-detector branch (PR ossia/score#2068).
+      # Its ci/common.deps.sh clones score-addon-onnx and checks out its
+      # feature/detector branch (PR ossia/score-addon-onnx#29), which adds the
+      # Detection Model / Track ROI / Smoothing ports used by RunView.qml.
+      # Once #2068 is merged into continuous, drop this step and restore
+      # `release-tag: "continuous"` on the package step below.
+      - name: Build ossia score (pose-detector branch)
+        id: score
+        uses: ossia/actions/custom-score-build@master
+        with:
+          score-repo: "ossia/score"
+          score-ref: "feature/detector"
+          cmake-options: "-DSCORE_ENABLE_ADDONS=score-addon-onnx"
+          target-arch: ${{ matrix.target-arch || '' }}
+          macos-certificate-base64: ${{ secrets.MAC_CERT_B64 }}
+          macos-certificate-password: ${{ secrets.MAC_CERT_PASSWORD }}
+          macos-notarize-team-id: ${{ secrets.MAC_NOTARIZE_TEAM_ID }}
+          macos-notarize-apple-id: ${{ secrets.MAC_NOTARIZE_APPLE_ID }}
+          macos-notarize-password: ${{ secrets.MAC_NOTARIZE_PASSWORD }}
+
       - name: Package custom ossia score app
         uses: ossia/actions/package-custom-app@master
         with:
@@ -37,7 +57,8 @@ jobs:
           qml-files: "qml"
           # Optional: Add your score file here
           score-file: "score/app.score"
-          release-tag: "continuous"
+          # Use the score build produced above instead of a published SDK.
+          score-build-id: ${{ steps.score.outputs.artifact-id }}
           platforms: "${{ matrix.platform }}"
           # App metadata
           app-organization: "SAT"
