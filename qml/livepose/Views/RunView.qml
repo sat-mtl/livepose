@@ -409,6 +409,123 @@ Pane {
             spacing: appStyle.spacing * 0.75
 
             CustomLabel {
+                text: "Input Source"
+                font.bold: true
+                font.pixelSize: appStyle.fontSizeSubtitle
+                Layout.topMargin: appStyle.padding
+            }
+            
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: appStyle.spacing
+                
+                Button {
+                    text: "Camera"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    font.bold: inputSource === "camera"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        inputSource = "camera"
+                        appSettings.lastInputSource = "camera"
+                        updateInputSourceMixer()
+                    }
+                }
+                
+                Button {
+                    text: "Video File"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    font.bold: inputSource === "video"
+                    Layout.fillWidth: true
+                    onClicked: {
+                        inputSource = "video"
+                        appSettings.lastInputSource = "video"
+                        updateInputSourceMixer()
+                    }
+                }
+            }
+
+            CustomComboBox {
+                id: cameraSelector
+                Layout.fillWidth: true
+                visible: inputSource === "camera"
+                model: [" ", ...cameraPrettyNamesList]
+                
+                onCurrentIndexChanged: {
+                    showCameraError = false
+                    if (currentIndex <= 0) return;
+                    Score.startMacro()
+                    const camera_name = cameraPrettyNamesList[currentIndex - 1]
+                    const camera_settings = cameraList[currentIndex - 1].settings
+                    appSettings.lastCameraName = camera_name
+                    Score.removeDevice("Camera")
+                    Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
+                    if (currentProcess) {
+                        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
+                        if (inputPort) Score.setAddress(inputPort, "Camera:/")
+                    }
+                    Score.endMacro()
+                }
+            }
+            
+            CustomLabel {
+                visible: showCameraError && inputSource === "camera"
+                text: "Please select a camera"
+                color: appStyle.errorColor
+                font.pixelSize: appStyle.fontSizeSmall
+            }
+            
+            RowLayout {
+                Layout.fillWidth: true
+                visible: inputSource === "video"
+                
+                CustomTextField {
+                    id: videoFilePathField
+                    Layout.fillWidth: true
+                    placeholderText: "Select video file..."
+                    text: videoFilePath
+                    onTextChanged: {
+                        videoFilePath = text
+                        setVideoPath(text)
+                        appSettings.lastVideoPath = text
+                    }
+                }
+                
+                Button {
+                    text: "Browse"
+                    font.family: appStyle.fontFamily
+                    font.pixelSize: appStyle.fontSizeBody
+                    onClicked: videoFileDialog.open()
+                }
+            }
+            
+            FileDialog {
+                id: videoFileDialog
+                title: "Select Video File"
+                nameFilters: ["Video Files (*.mp4 *.avi *.mov *.mkv *.webm)", "All Files (*)"]
+                onAccepted: {
+                    if (!selectedFile) return
+                    var filePath = selectedFile.toString()
+                    if (filePath.startsWith("file://")) filePath = filePath.substring(7)
+                    videoFilePathField.text = filePath
+                }
+            }
+            
+            CustomLabel {
+                visible: inputSource === "video" && videoFilePath === ""
+                text: "Please select a video file"
+                color: appStyle.errorColor
+                font.pixelSize: appStyle.fontSizeSmall
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                height: 1
+                color: appStyle.separatorColor
+            }
+
+            CustomLabel {
                 text: "Model Configuration"
                 font.bold: true
                 font.pixelSize: appStyle.fontSizeTitle
@@ -470,7 +587,7 @@ Pane {
                 spacing: appStyle.spacing
 
                 CustomLabel {
-                    text: "ONNX Model File"
+                    text: (currentProcess && currentProcess.isPoseDetector) ? "Landmark Model (ONNX)" : "ONNX Model File"
                     font.bold: true
                 }
 
@@ -531,6 +648,58 @@ Pane {
                     text: "Please select an ONNX model file"
                     color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
+                }
+
+                CustomLabel {
+                    text: "Detection Model (optional, two-stage)"
+                    font.bold: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+
+                    CustomTextField {
+                        id: detectionModelFilePathField
+                        Layout.fillWidth: true
+                        text: ""
+                        placeholderText: "Optional stage-1 detector ONNX (empty = single-stage)..."
+
+                        onTextChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.det_Model) {
+                                try { Score.setValue(pose_Detector.det_Model, text) } catch(e) { }
+                            }
+                            appSettings.poseDetectorDetectionModelPath = text
+                        }
+                    }
+
+                    Button {
+                        text: "Browse"
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        onClicked: detectionModelFileDialog.open()
+                    }
+
+                    Button {
+                        text: "Clear"
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        visible: detectionModelFilePathField.text !== ""
+                        onClicked: detectionModelFilePathField.text = ""
+                    }
+                }
+
+                FileDialog {
+                    id: detectionModelFileDialog
+                    title: "Select Detection Model (ONNX)"
+                    nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
+                    onAccepted: {
+                        if (!selectedFile) return
+                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
+                        if (filePath.startsWith("file://")) filePath = filePath.substring(7)
+                        detectionModelFilePathField.text = filePath
+                    }
                 }
                                 
                 CustomLabel {
@@ -625,58 +794,6 @@ Pane {
                     }
                 }
 
-                CustomLabel {
-                    text: "Detection Model (optional, two-stage)"
-                    font.bold: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-
-                    CustomTextField {
-                        id: detectionModelFilePathField
-                        Layout.fillWidth: true
-                        text: ""
-                        placeholderText: "Optional stage-1 detector ONNX (empty = single-stage)..."
-
-                        onTextChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.det_Model) {
-                                try { Score.setValue(pose_Detector.det_Model, text) } catch(e) { }
-                            }
-                            appSettings.poseDetectorDetectionModelPath = text
-                        }
-                    }
-
-                    Button {
-                        text: "Browse"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        onClicked: detectionModelFileDialog.open()
-                    }
-
-                    Button {
-                        text: "Clear"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        visible: detectionModelFilePathField.text !== ""
-                        onClicked: detectionModelFilePathField.text = ""
-                    }
-                }
-
-                FileDialog {
-                    id: detectionModelFileDialog
-                    title: "Select Detection Model (ONNX)"
-                    nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
-                    onAccepted: {
-                        if (!selectedFile) return
-                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
-                        if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                        detectionModelFilePathField.text = filePath
-                    }
-                }
-
                 RowLayout {
                     Layout.fillWidth: true
                     visible: currentProcess && currentProcess.isPoseDetector
@@ -710,6 +827,21 @@ Pane {
                             }
                         }
                     }
+
+                    CheckBox {
+                        id: trackIDsSwitch
+                        text: "Track IDs"
+                        checked: false
+                        Layout.leftMargin: appStyle.spacing
+                        onCheckedChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
+                                try {
+                                    Score.setValue(pose_Detector.track_IDs, checked)
+                                    appSettings.poseDetectorTrackIDs = checked
+                                } catch(e) { }
+                            }
+                        }
+                    }
                 }
 
                 RowLayout {
@@ -736,26 +868,6 @@ Pane {
                                 try {
                                     Score.setValue(pose_Detector.smoothing_Amount, value)
                                     appSettings.poseDetectorSmoothingAmount = value
-                                } catch(e) { }
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
-
-                    CheckBox {
-                        id: trackIDsSwitch
-                        text: "Track IDs"
-                        checked: false
-                        onCheckedChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
-                                try {
-                                    Score.setValue(pose_Detector.track_IDs, checked)
-                                    appSettings.poseDetectorTrackIDs = checked
                                 } catch(e) { }
                             }
                         }
@@ -874,122 +986,6 @@ Pane {
                         classesFilePathField.text = filePath
                     }
                 }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: appStyle.separatorColor
-            }
-
-            CustomLabel {
-                text: "Input Source"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
-            }
-            
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: appStyle.spacing
-                
-                Button {
-                    text: "Camera"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    font.bold: inputSource === "camera"
-                    Layout.fillWidth: true
-                    onClicked: {
-                        inputSource = "camera"
-                        appSettings.lastInputSource = "camera"
-                        updateInputSourceMixer()
-                    }
-                }
-                
-                Button {
-                    text: "Video File"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    font.bold: inputSource === "video"
-                    Layout.fillWidth: true
-                    onClicked: {
-                        inputSource = "video"
-                        appSettings.lastInputSource = "video"
-                        updateInputSourceMixer()
-                    }
-                }
-            }
-
-            CustomComboBox {
-                id: cameraSelector
-                Layout.fillWidth: true
-                visible: inputSource === "camera"
-                model: [" ", ...cameraPrettyNamesList]
-                
-                onCurrentIndexChanged: {
-                    showCameraError = false
-                    if (currentIndex <= 0) return;
-                    Score.startMacro()
-                    const camera_name = cameraPrettyNamesList[currentIndex - 1]
-                    const camera_settings = cameraList[currentIndex - 1].settings
-                    appSettings.lastCameraName = camera_name
-                    Score.removeDevice("Camera")
-                    Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
-                    if (currentProcess) {
-                        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
-                        if (inputPort) Score.setAddress(inputPort, "Camera:/")
-                    }
-                    Score.endMacro()
-                }
-            }
-            
-            CustomLabel {
-                visible: showCameraError && inputSource === "camera"
-                text: "Please select a camera"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
-            }
-            
-            RowLayout {
-                Layout.fillWidth: true
-                visible: inputSource === "video"
-                
-                CustomTextField {
-                    id: videoFilePathField
-                    Layout.fillWidth: true
-                    placeholderText: "Select video file..."
-                    text: videoFilePath
-                    onTextChanged: {
-                        videoFilePath = text
-                        setVideoPath(text)
-                        appSettings.lastVideoPath = text
-                    }
-                }
-                
-                Button {
-                    text: "Browse"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    onClicked: videoFileDialog.open()
-                }
-            }
-            
-            FileDialog {
-                id: videoFileDialog
-                title: "Select Video File"
-                nameFilters: ["Video Files (*.mp4 *.avi *.mov *.mkv *.webm)", "All Files (*)"]
-                onAccepted: {
-                    if (!selectedFile) return
-                    var filePath = selectedFile.toString()
-                    if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                    videoFilePathField.text = filePath
-                }
-            }
-            
-            CustomLabel {
-                visible: inputSource === "video" && videoFilePath === ""
-                text: "Please select a video file"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
             }
 
             Rectangle {
