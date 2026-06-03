@@ -31,14 +31,17 @@ ApplicationWindow {
         property string lastInputSource: "camera"
         
         property int poseDetectorOutputMode: 0
-        property real poseDetectorMinConfidence: 0.5
+        property real poseDetectorMinConfidence: 0.3
         property bool poseDetectorDrawSkeleton: true
         property int poseDetectorDataFormat: 0
 
         property string poseDetectorDetectionModelPath: ""
-        property bool poseDetectorTrackROI: true
+        property bool poseDetectorTrackROI: false
         property bool poseDetectorSmoothing: true
         property real poseDetectorSmoothingAmount: 0.5
+        property bool poseDetectorTrackIDs: false
+        property int poseDetectorMaxInstances: 5
+        property int poseDetectorDetectorCadence: 4
     }
 
     
