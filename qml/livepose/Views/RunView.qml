@@ -36,11 +36,13 @@ Pane {
     property string videoFilePath: ""
     
     property var poseDetectorWorkflows: [
+        "Auto",
         "BlazePose",
-        "RTMPose_COCO", 
+        "RTMPose_COCO",
         "RTMPose_Whole",
         "ViTPose",
         "YOLOPose",
+        "AnimalPose",
         "MediaPipeHands",
         "FaceMesh",
         "BlazeFace",
@@ -89,6 +91,9 @@ Pane {
             if (pose_Detector.track_ROI) Score.setValue(pose_Detector.track_ROI, trackROISwitch.checked)
             if (pose_Detector.smoothing) Score.setValue(pose_Detector.smoothing, smoothingSwitch.checked)
             if (pose_Detector.smoothing_Amount) Score.setValue(pose_Detector.smoothing_Amount, smoothingAmountSlider.value)
+            if (pose_Detector.track_IDs) Score.setValue(pose_Detector.track_IDs, trackIDsSwitch.checked)
+            if (pose_Detector.max_Instances) Score.setValue(pose_Detector.max_Instances, maxInstancesSpinBox.value)
+            if (pose_Detector.detector_Cadence) Score.setValue(pose_Detector.detector_Cadence, detectorCadenceSpinBox.value)
         } catch(e) { }
     }
     
@@ -126,18 +131,24 @@ Pane {
             property var process_object : Score.find("Pose Detector");
             property var input : Score.inlet(process_object, 0);
             property var model : Score.inlet(process_object, 1);
-            property var det_Model : Score.inlet(process_object, 2);
-            property var workflow : Score.inlet(process_object, 3);
-            property var output_Mode : Score.inlet(process_object, 4);
-            property var min_Confidence : Score.inlet(process_object, 5);
-            property var draw_Skeleton : Score.inlet(process_object, 6);
-            property var data_Format : Score.inlet(process_object, 7);
+            property var workflow : Score.inlet(process_object, 2);
+            property var output_Mode : Score.inlet(process_object, 3);
+            property var min_Confidence : Score.inlet(process_object, 4);
+            property var draw_Skeleton : Score.inlet(process_object, 5);
+            property var data_Format : Score.inlet(process_object, 6);
+            property var det_Model : Score.inlet(process_object, 7);
             property var track_ROI : Score.inlet(process_object, 8);
             property var smoothing : Score.inlet(process_object, 9);
             property var smoothing_Amount : Score.inlet(process_object, 10);
+            property var track_IDs : Score.inlet(process_object, 11);
+            property var max_Instances : Score.inlet(process_object, 12);
+            property var detector_Cadence : Score.inlet(process_object, 13);
             property var out : Score.outlet(process_object, 0);
             property var detection : Score.outlet(process_object, 1);
             property var geometry : Score.outlet(process_object, 2);
+            property var poses : Score.outlet(process_object, 3);
+            property var poses_geometry : Score.outlet(process_object, 4);
+            property var count : Score.outlet(process_object, 5);
         }
         QtObject { id: pose_video
             property var process_object : Score.find("pose video");
@@ -351,10 +362,17 @@ Pane {
         }
 
         detectionModelFilePathField.text = appSettings.poseDetectorDetectionModelPath
-        trackROISwitch.checked = appSettings.poseDetectorTrackROI !== false // default to true
+        trackROISwitch.checked = appSettings.poseDetectorTrackROI === true // default to false
         smoothingSwitch.checked = appSettings.poseDetectorSmoothing !== false // default to true
         if (appSettings.poseDetectorSmoothingAmount >= 0 && appSettings.poseDetectorSmoothingAmount <= 1) {
             smoothingAmountSlider.value = appSettings.poseDetectorSmoothingAmount
+        }
+        trackIDsSwitch.checked = appSettings.poseDetectorTrackIDs === true // default to false
+        if (appSettings.poseDetectorMaxInstances >= 1 && appSettings.poseDetectorMaxInstances <= 16) {
+            maxInstancesSpinBox.value = appSettings.poseDetectorMaxInstances
+        }
+        if (appSettings.poseDetectorDetectorCadence >= 1 && appSettings.poseDetectorDetectorCadence <= 30) {
+            detectorCadenceSpinBox.value = appSettings.poseDetectorDetectorCadence
         }
 
         if (appSettings.lastSelectedModel !== "" && availableProcesses.length > 0) {
@@ -555,7 +573,7 @@ Pane {
                         Layout.minimumWidth: 80
                         from: 0.0
                         to: 1.0
-                        value: 0.5
+                        value: 0.3
                         stepSize: 0.01
                         onValueChanged: {
                             if (currentProcess && currentProcess.isPoseDetector && pose_Detector.min_Confidence) {
@@ -667,7 +685,7 @@ Pane {
                     CheckBox {
                         id: trackROISwitch
                         text: "Track ROI"
-                        checked: true
+                        checked: false
                         onCheckedChanged: {
                             if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
                                 try {
@@ -718,6 +736,80 @@ Pane {
                                 try {
                                     Score.setValue(pose_Detector.smoothing_Amount, value)
                                     appSettings.poseDetectorSmoothingAmount = value
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    spacing: appStyle.spacing
+
+                    CheckBox {
+                        id: trackIDsSwitch
+                        text: "Track IDs"
+                        checked: false
+                        onCheckedChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
+                                try {
+                                    Score.setValue(pose_Detector.track_IDs, checked)
+                                    appSettings.poseDetectorTrackIDs = checked
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    spacing: appStyle.spacing
+
+                    CustomLabel {
+                        text: "Max Instances"
+                        font.bold: true
+                    }
+
+                    SpinBox {
+                        id: maxInstancesSpinBox
+                        from: 1
+                        to: 16
+                        value: 5
+                        editable: true
+                        onValueChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Instances) {
+                                try {
+                                    Score.setValue(pose_Detector.max_Instances, value)
+                                    appSettings.poseDetectorMaxInstances = value
+                                } catch(e) { }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: currentProcess && currentProcess.isPoseDetector
+                    spacing: appStyle.spacing
+
+                    CustomLabel {
+                        text: "Detector Cadence"
+                        font.bold: true
+                    }
+
+                    SpinBox {
+                        id: detectorCadenceSpinBox
+                        from: 1
+                        to: 30
+                        value: 4
+                        editable: true
+                        onValueChanged: {
+                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detector_Cadence) {
+                                try {
+                                    Score.setValue(pose_Detector.detector_Cadence, value)
+                                    appSettings.poseDetectorDetectorCadence = value
                                 } catch(e) { }
                             }
                         }
