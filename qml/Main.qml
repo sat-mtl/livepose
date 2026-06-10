@@ -95,8 +95,10 @@ ApplicationWindow {
         appDetails: "This tool offers a way to track people's skeletons from a live video stream, and sends the results through the network (OSC)."
         appWebsite: "https://gitlab.com/sat-mtl"
         logoPath: "livepose/resources/images/LivePose_logo.png"
-        satLogoPath: "livepose/resources/images/sat_logo.png"
-        ossiaLogoPath: "livepose/resources/images/ossia_logo.png"
+        partnerLogos: [
+            { source: "livepose/resources/images/sat_logo.png", website: "https://www.sat.qc.ca" },
+            { source: "livepose/resources/images/ossia_logo.png", website: "https://ossia.io" }
+        ]
     }
 
     RowLayout {
