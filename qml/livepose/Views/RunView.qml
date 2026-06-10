@@ -4,20 +4,31 @@ import QtQuick.Layouts
 import QtQuick.Dialogs
 import QtCore
 import Score.UI as UI
-import livepose
+import ca.qc.sat.qmlcomponents
 
 Pane {
     id: runView
     background: Rectangle {
-        color: appStyle.backgroundColor
+        color: Theme.backgroundColor
     }
 
 
     property var logger: mainWindow.logger
 
-    property var deviceEnumerator
-    property var cameraList: []
-    property var cameraPrettyNamesList: []
+    // ---- Input backend state (generalised from the old camera-only path) ----
+    // A single live device named "Input" occupies the alpha1 lane and is routed
+    // to the current Video Mapper "in" port; the video file keeps the alpha2
+    // lane. The InputSourceSelector widget is pure presentation — this view owns
+    // every Score.* call (enumeration + device lifecycle + mixer).
+    property var deviceEnumerator: null
+    property string currentBackend: ""        // "Camera" | "Video file" | "NDI" | "Spout" | "Syphon"
+    property bool deviceBackend: true          // false => the file lane (Video file)
+    property string currentSourceName: ""
+    property var sourceSnapshot: ({})          // source name -> enumerated DeviceSettings (sync backends)
+    property var discoveredSources: []         // source names offered to the selector
+    property string videoFilePath: ""
+    property string inputStatusText: ""
+
     property var availableProcesses: []
     property var currentProcess: null
 
@@ -25,16 +36,14 @@ Pane {
     property bool isRunning: false
     property bool oscReady: false
     property bool pendingRestart: false
-    
+
     property bool showModelError: false
     property bool showCameraError: false
     property bool showModelFileError: false
     property bool showClassesFileError: false
     property var modelPaths: ({})
     property var classesPaths: ({})
-    property string inputSource: "camera"
-    property string videoFilePath: ""
-    
+
     property var poseDetectorWorkflows: [
         "BlazePose",
         "RTMPose_COCO", 
@@ -88,17 +97,18 @@ Pane {
         } catch(e) { }
     }
     
-    function updateInputSourceMixer() {
-        var cameraAlpha = inputSource === "camera" ? 1.0 : 0.0
-        var videoAlpha = inputSource === "video" ? 1.0 : 0.0
+    // alpha1 = live-device lane (Camera/NDI/Spout/Syphon), alpha2 = file lane.
+    function setInputLane(live) {
+        var liveAlpha = live ? 1.0 : 0.0
+        var fileAlpha = live ? 0.0 : 1.0
         try {
-            if (pose_video_Mixer.alpha1) Score.setValue(pose_video_Mixer.alpha1, cameraAlpha)
-            if (pose_video_Mixer.alpha2) Score.setValue(pose_video_Mixer.alpha2, videoAlpha)
-            if (obj_video_Mixer.alpha1) Score.setValue(obj_video_Mixer.alpha1, cameraAlpha)
-            if (obj_video_Mixer.alpha2) Score.setValue(obj_video_Mixer.alpha2, videoAlpha)
+            if (pose_video_Mixer.alpha1) Score.setValue(pose_video_Mixer.alpha1, liveAlpha)
+            if (pose_video_Mixer.alpha2) Score.setValue(pose_video_Mixer.alpha2, fileAlpha)
+            if (obj_video_Mixer.alpha1) Score.setValue(obj_video_Mixer.alpha1, liveAlpha)
+            if (obj_video_Mixer.alpha2) Score.setValue(obj_video_Mixer.alpha2, fileAlpha)
         } catch(e) { }
     }
-    
+
     function setVideoPath(path) {
         if (path === "") return
         try {
@@ -198,20 +208,100 @@ Pane {
         }
     }
 
-    function enumerateCameras() {
-        try {
-            deviceEnumerator = Score.enumerateDevices("d615690b-f2e2-447b-b70e-a800552db69c")
-            deviceEnumerator.enumerate = true
-            cameraList = []
-            cameraPrettyNamesList = []
-            for (let dev of deviceEnumerator.devices) {
-                cameraList.push(dev)
-                cameraPrettyNamesList.push(dev.category + ": " + dev.name)
-            }
-            cameraSelector.model = [" ", ...cameraPrettyNamesList]
-        } catch (error) {
-            logger.log("Error enumerating cameras: " + error)
+    // Descriptor (uuid, kind, enumerate sync/async, typable) for a backend name.
+    function backendDescriptor(name) {
+        return inputSelector.descriptor(name)
+    }
+
+    function _clearEnumerator() {
+        if (deviceEnumerator) {
+            try { deviceEnumerator.deviceAdded.disconnect(onDeviceAdded) } catch(e) {}
+            try { deviceEnumerator.deviceRemoved.disconnect(onDeviceRemoved) } catch(e) {}
+            try { deviceEnumerator.enumerate = false } catch(e) {}
+            deviceEnumerator = null
         }
+    }
+
+    function onDeviceAdded(factory, category, name, settings) {
+        if (discoveredSources.indexOf(name) === -1) {
+            var arr = discoveredSources.slice()
+            arr.push(name)
+            discoveredSources = arr
+        }
+    }
+
+    function onDeviceRemoved(factory, name) {
+        var idx = discoveredSources.indexOf(name)
+        if (idx !== -1) {
+            var arr = discoveredSources.slice()
+            arr.splice(idx, 1)
+            discoveredSources = arr
+        }
+    }
+
+    // (Re)enumerate the sources for a device backend. Sync backends
+    // (Camera/Syphon) snapshot the full DeviceSettings to recreate verbatim;
+    // async backends (NDI/Spout) listen for deviceAdded/Removed (names only).
+    function reenumerate(backend) {
+        _clearEnumerator()
+        discoveredSources = []
+        sourceSnapshot = ({})
+        inputStatusText = ""
+        var desc = backendDescriptor(backend)
+        if (!desc || desc.kind !== "device") return
+        try {
+            deviceEnumerator = Score.enumerateDevices(desc.uuid)
+            if (desc.enumerate === "async") {
+                deviceEnumerator.deviceAdded.connect(onDeviceAdded)
+                deviceEnumerator.deviceRemoved.connect(onDeviceRemoved)
+                deviceEnumerator.enumerate = true
+                inputStatusText = qsTr("No %1 source found yet — type a source name if needed").arg(backend)
+            } else {
+                deviceEnumerator.enumerate = true
+                var names = []
+                var snap = ({})
+                for (let dev of deviceEnumerator.devices) {
+                    var label = (backend === "Camera") ? (dev.category + ": " + dev.name) : dev.name
+                    names.push(label)
+                    snap[label] = dev.settings
+                }
+                sourceSnapshot = snap
+                discoveredSources = names
+            }
+        } catch (error) {
+            inputStatusText = qsTr("%1 unavailable in this build").arg(backend)
+            logger.log("Error enumerating " + backend + ": " + error)
+        }
+    }
+
+    // Create/replace the single "Input" device for the current backend and route
+    // it to the current Video Mapper "in" port. Assumes it runs inside a macro.
+    function _createInputDeviceInMacro(name) {
+        var desc = backendDescriptor(currentBackend)
+        if (!desc || desc.kind !== "device") return
+        var settings = (desc.enumerate === "sync") ? sourceSnapshot[name] : { "Path": name }
+        if (desc.enumerate === "sync" && !settings) {
+            logger.log("No enumerated settings for source: " + name)
+            return
+        }
+        try {
+            Score.removeDevice("Input")
+            Score.createDevice("Input", desc.uuid, settings)
+            if (currentProcess) {
+                const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
+                if (inputPort) Score.setAddress(inputPort, "Input:/")
+            }
+        } catch(e) {
+            logger.log("Error creating input device: " + e)
+        }
+    }
+
+    function recreateInputDevice(name) {
+        if (name === "") return
+        Score.startMacro()
+        _createInputDeviceInMacro(name)
+        Score.endMacro()
+        setInputLane(true)
     }
 
     function validateBeforeStart() {
@@ -235,12 +325,12 @@ Pane {
             showClassesFileError = true
             return false
         }
-        if (inputSource === "camera" && cameraSelector.currentIndex <= 0) {
-            logger.log("Cannot start: No camera selected")
+        if (deviceBackend && currentSourceName === "") {
+            logger.log("Cannot start: No input source selected")
             showCameraError = true
             return false
         }
-        if (inputSource === "video" && videoFilePath === "") {
+        if (!deviceBackend && videoFilePath === "") {
             logger.log("Cannot start: No video file selected")
             return false
         }
@@ -254,17 +344,13 @@ Pane {
         saveAllFieldsToScore()
 
         Score.startMacro()
-        if (inputSource === "camera" && cameraSelector.currentIndex > 0) {
-            const cameraSettings = cameraList[cameraSelector.currentIndex - 1].settings
-            Score.removeDevice("Camera")
-            Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", cameraSettings)
-            const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel);
-            if (inputPort) Score.setAddress(inputPort, "Camera:/")
+        if (deviceBackend && currentSourceName !== "") {
+            _createInputDeviceInMacro(currentSourceName)
         }
-        if (inputSource === "video" && videoFilePath !== "") {
+        if (!deviceBackend && videoFilePath !== "") {
             setVideoPath(videoFilePath)
         }
-        updateInputSourceMixer()
+        setInputLane(deviceBackend)
 
         if (!oscReady) {
             try { Score.removeDevice("MyOSC"); } catch(e) {}
@@ -283,7 +369,7 @@ Pane {
             trigger.triggeredByGui();
         isRunning = true;
         isStarting = false;
-        var inputDesc = inputSource === "camera" ? cameraPrettyNamesList[cameraSelector.currentIndex - 1] : videoFilePath
+        var inputDesc = deviceBackend ? (currentBackend + ": " + currentSourceName) : videoFilePath
         logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + oscIpAddress.text + ":" + oscPort.text);
     }
 
@@ -292,7 +378,7 @@ Pane {
         Score.stop();
         Score.startMacro();
         try { Score.removeDevice("MyOSC"); } catch(e) {}
-        try { Score.removeDevice("Camera"); } catch(e) {}
+        try { Score.removeDevice("Input"); } catch(e) {}
         Score.endMacro();
         isRunning = false;
         isStarting = false;
@@ -315,7 +401,9 @@ Pane {
     }
 
     Component.onCompleted: {
-        enumerateCameras();
+        currentBackend = inputSelector.currentBackend
+        deviceBackend = inputSelector.deviceBackend
+        reenumerate(currentBackend)
         findAllScenarios();
 
         restoreSavedSettings();
@@ -329,8 +417,10 @@ Pane {
 
         oscIpAddress.text = appSettings.oscIpAddress
         oscPort.text = appSettings.oscPortValue
-        if (appSettings.lastInputSource !== "") inputSource = appSettings.lastInputSource
-        if (appSettings.lastVideoPath !== "") videoFilePath = appSettings.lastVideoPath
+        if (appSettings.lastVideoPath !== "") {
+            videoFilePath = appSettings.lastVideoPath
+            inputSelector.videoFilePath = appSettings.lastVideoPath
+        }
         if (appSettings.poseDetectorOutputMode >= 0 && appSettings.poseDetectorOutputMode < poseDetectorOutputModes.length) {
             outputModeSelector.currentIndex = appSettings.poseDetectorOutputMode
         }
@@ -352,13 +442,15 @@ Pane {
             }
         }
 
-        if (appSettings.lastCameraName !== "" && cameraPrettyNamesList.length > 0) {
-            for (var j = 0; j < cameraPrettyNamesList.length; j++) {
-                if (cameraPrettyNamesList[j] === appSettings.lastCameraName) {
-                    cameraSelector.currentIndex = j + 1;
-                    break;
-                }
-            }
+        // Restore the last input source for a sync device backend (Camera/Syphon):
+        // if it is still present we reconnect the "Input" device, as the camera
+        // path used to do on launch. Async backends discover sources later, so
+        // they are reconnected when the user (re)selects them.
+        if (appSettings.lastSourceName !== "" && deviceBackend &&
+            discoveredSources.indexOf(appSettings.lastSourceName) !== -1) {
+            currentSourceName = appSettings.lastSourceName
+            inputSelector.currentSource = appSettings.lastSourceName
+            recreateInputDevice(appSettings.lastSourceName)
         }
     }
 
@@ -371,21 +463,21 @@ Pane {
         contentWidth: availableWidth
 
         ColumnLayout {
-            x: appStyle.padding
-            width: parent.width - 2 * appStyle.padding
-            spacing: appStyle.spacing * 0.75
+            x: Theme.padding
+            width: parent.width - 2 * Theme.padding
+            spacing: Theme.spacing * 0.75
 
             CustomLabel {
                 text: "Model Configuration"
                 font.bold: true
-                font.pixelSize: appStyle.fontSizeTitle
-                Layout.topMargin: appStyle.padding
+                font.pixelSize: Theme.fontSizeTitle
+                Layout.topMargin: Theme.padding
             }
 
             CustomLabel {
                 text: "Choose AI Model"
                 font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
+                font.pixelSize: Theme.fontSizeSubtitle
             }
 
             CustomComboBox {
@@ -427,14 +519,14 @@ Pane {
             CustomLabel {
                 visible: showModelError
                 text: "Please select a model"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
+                color: Theme.errorColor
+                font.pixelSize: Theme.fontSizeSmall
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
                 visible: currentProcess !== null
-                spacing: appStyle.spacing
+                spacing: Theme.spacing
 
                 CustomLabel {
                     text: "ONNX Model File"
@@ -475,8 +567,8 @@ Pane {
                     
                     Button {
                         text: "Browse"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBody
                         onClicked: onnxFileDialog.open()
                     }
                 }
@@ -496,8 +588,8 @@ Pane {
                 CustomLabel {
                     visible: showModelFileError
                     text: "Please select an ONNX model file"
-                    color: appStyle.errorColor
-                    font.pixelSize: appStyle.fontSizeSmall
+                    color: Theme.errorColor
+                    font.pixelSize: Theme.fontSizeSmall
                 }
                                 
                 CustomLabel {
@@ -527,7 +619,7 @@ Pane {
                 RowLayout {
                     Layout.fillWidth: true
                     visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
+                    spacing: Theme.spacing
                     
                     CustomLabel {
                         text: "Confidence: " + minConfidenceSlider.value.toFixed(2)
@@ -556,7 +648,7 @@ Pane {
                         id: drawSkeletonSwitch
                         text: "Draw Skeleton"
                         checked: true
-                        Layout.leftMargin: appStyle.spacing
+                        Layout.leftMargin: Theme.spacing
                         onCheckedChanged: {
                             if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Skeleton) {
                                 try {
@@ -627,8 +719,8 @@ Pane {
                     
                     Button {
                         text: "Browse"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBody
                         onClicked: classesFileDialog.open()
                     }
                 }
@@ -636,8 +728,8 @@ Pane {
                 CustomLabel {
                     visible: showClassesFileError && currentProcess && currentProcess.isObjectDetector
                     text: "Please select a classes file"
-                    color: appStyle.errorColor
-                    font.pixelSize: appStyle.fontSizeSmall
+                    color: Theme.errorColor
+                    font.pixelSize: Theme.fontSizeSmall
                 }
                 
                 FileDialog {
@@ -655,134 +747,78 @@ Pane {
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: appStyle.separatorColor
+                color: Theme.separatorColor
+            }
+
+            // Shared multi-backend picker. It is pure presentation: this view
+            // owns every Score.* call via the signal handlers below. The host
+            // computes the protocol allow-list — LIVEPOSE_ADVANCED_IO reveals
+            // the NDI/Spout/Syphon backends (platform-filtered by the widget).
+            InputSourceSelector {
+                id: inputSelector
+                Layout.fillWidth: true
+                allowedBackends: {
+                    var adv = !!Util.environmentVariable("LIVEPOSE_ADVANCED_IO")
+                    return adv ? ["Camera", "Video file", "NDI", "Spout", "Syphon"]
+                               : ["Camera", "Video file"]
+                }
+                sources: runView.discoveredSources
+                statusText: runView.inputStatusText
+
+                onBackendSelected: name => {
+                    runView.currentBackend = name
+                    runView.deviceBackend = inputSelector.deviceBackend
+                    runView.currentSourceName = ""
+                    runView.showCameraError = false
+                    appSettings.lastBackend = name
+                    runView.setInputLane(inputSelector.deviceBackend)
+                    if (inputSelector.deviceBackend)
+                        runView.reenumerate(name)
+                }
+                onSourceSelected: name => {
+                    runView.showCameraError = false
+                    runView.currentSourceName = name
+                    appSettings.lastSourceName = name
+                    runView.recreateInputDevice(name)   // live swap, as the camera path did
+                }
+                onVideoFileSelected: path => {
+                    runView.videoFilePath = path
+                    appSettings.lastVideoPath = path
+                    runView.setVideoPath(path)
+                    runView.setInputLane(false)
+                }
+                onRefreshRequested: () => runView.reenumerate(runView.currentBackend)
             }
 
             CustomLabel {
-                text: "Input Source"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
-            }
-            
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: appStyle.spacing
-                
-                Button {
-                    text: "Camera"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    font.bold: inputSource === "camera"
-                    Layout.fillWidth: true
-                    onClicked: {
-                        inputSource = "camera"
-                        appSettings.lastInputSource = "camera"
-                        updateInputSourceMixer()
-                    }
-                }
-                
-                Button {
-                    text: "Video File"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    font.bold: inputSource === "video"
-                    Layout.fillWidth: true
-                    onClicked: {
-                        inputSource = "video"
-                        appSettings.lastInputSource = "video"
-                        updateInputSourceMixer()
-                    }
-                }
+                visible: showCameraError && deviceBackend
+                text: "Please select an input source"
+                color: Theme.errorColor
+                font.pixelSize: Theme.fontSizeSmall
             }
 
-            CustomComboBox {
-                id: cameraSelector
-                Layout.fillWidth: true
-                visible: inputSource === "camera"
-                model: [" ", ...cameraPrettyNamesList]
-                
-                onCurrentIndexChanged: {
-                    showCameraError = false
-                    if (currentIndex <= 0) return;
-                    Score.startMacro()
-                    const camera_name = cameraPrettyNamesList[currentIndex - 1]
-                    const camera_settings = cameraList[currentIndex - 1].settings
-                    appSettings.lastCameraName = camera_name
-                    Score.removeDevice("Camera")
-                    Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
-                    if (currentProcess) {
-                        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
-                        if (inputPort) Score.setAddress(inputPort, "Camera:/")
-                    }
-                    Score.endMacro()
-                }
-            }
-            
             CustomLabel {
-                visible: showCameraError && inputSource === "camera"
-                text: "Please select a camera"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
-            }
-            
-            RowLayout {
-                Layout.fillWidth: true
-                visible: inputSource === "video"
-                
-                CustomTextField {
-                    id: videoFilePathField
-                    Layout.fillWidth: true
-                    placeholderText: "Select video file..."
-                    text: videoFilePath
-                    onTextChanged: {
-                        videoFilePath = text
-                        setVideoPath(text)
-                        appSettings.lastVideoPath = text
-                    }
-                }
-                
-                Button {
-                    text: "Browse"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    onClicked: videoFileDialog.open()
-                }
-            }
-            
-            FileDialog {
-                id: videoFileDialog
-                title: "Select Video File"
-                nameFilters: ["Video Files (*.mp4 *.avi *.mov *.mkv *.webm)", "All Files (*)"]
-                onAccepted: {
-                    if (!selectedFile) return
-                    var filePath = selectedFile.toString()
-                    if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                    videoFilePathField.text = filePath
-                }
-            }
-            
-            CustomLabel {
-                visible: inputSource === "video" && videoFilePath === ""
+                visible: !deviceBackend && videoFilePath === ""
                 text: "Please select a video file"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
+                color: Theme.errorColor
+                font.pixelSize: Theme.fontSizeSmall
             }
 
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: appStyle.separatorColor
+                color: Theme.separatorColor
             }
 
             CustomLabel {
                 text: "OSC Output Settings"
                 font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
+                font.pixelSize: Theme.fontSizeSubtitle
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                spacing: appStyle.spacing
+                spacing: Theme.spacing
                 
                 CustomTextField {
                     id: oscIpAddress
@@ -807,13 +843,13 @@ Pane {
             Rectangle {
                 Layout.fillWidth: true
                 height: 1
-                color: appStyle.separatorColor
+                color: Theme.separatorColor
             }
 
             CustomLabel {
                 text: "Video Preview"
                 font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
+                font.pixelSize: Theme.fontSizeSubtitle
             }
 
             Rectangle {
@@ -823,8 +859,8 @@ Pane {
                 Layout.minimumWidth: 360
                 Layout.minimumHeight: 200
                 color: "transparent"
-                radius: appStyle.borderRadius
-                border.color: appStyle.borderColor
+                radius: Theme.borderRadius
+                border.color: Theme.borderColor
                 border.width: 1
                 
                 readonly property real aspectRatio: 16 / 9
@@ -832,8 +868,8 @@ Pane {
                     id: videoPreviewClip
                     anchors.fill: parent
                     anchors.margins: 1
-                    radius: appStyle.borderRadius - 1
-                    color: appStyle.backgroundColorTertiary
+                    radius: Theme.borderRadius - 1
+                    color: Theme.backgroundColorTertiary
                     clip: true
                     layer.enabled: true
                     layer.smooth: true
@@ -858,15 +894,17 @@ Pane {
                                 return "Please select a model"
                             } else if (!modelFilePathField.hasValidPath) {
                                 return "Please select an ONNX model file"
-                            } else if (cameraSelector.currentIndex <= 0) {
-                                return "Please select a camera"
+                            } else if (deviceBackend && currentSourceName === "") {
+                                return "Please select an input source"
+                            } else if (!deviceBackend && videoFilePath === "") {
+                                return "Please select a video file"
                             } else {
                                 return "Ready to start: " + currentProcess.scenarioLabel
                             }
                         }
-                        color: appStyle.textColorSecondary
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
+                        color: Theme.textColorSecondary
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBody
                         visible: !isRunning
                     }
                 }
@@ -876,13 +914,13 @@ Pane {
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.bottomMargin: appStyle.padding
+                Layout.bottomMargin: Theme.padding
 
                 Button {
                     id: startStopButton
                     text: isRunning ? "Stop" : "Start"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeBody
                     onClicked: {
                         if (isRunning) {
                             stopCurrentProcess()
@@ -898,7 +936,8 @@ Pane {
                     text: {
                         if (!currentProcess) return "Please select a model"
                         if (!modelFilePathField.hasValidPath) return "Please select an ONNX model file"
-                        if (cameraSelector.currentIndex <= 0) return "Please select a camera"
+                        if (deviceBackend && currentSourceName === "") return "Please select an input source"
+                        if (!deviceBackend && videoFilePath === "") return "Please select a video file"
                         if (isRunning) return "Running: " + currentProcess.scenarioLabel
                         return "Ready: " + currentProcess.scenarioLabel
                     }

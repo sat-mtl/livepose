@@ -4,22 +4,24 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Score.UI as UI
 import livepose
+import ca.qc.sat.qmlcomponents
 
 ApplicationWindow {
     id: mainWindow
-    width: appStyle.windowWidth
-    height: appStyle.windowHeight
-    minimumWidth: appStyle.windowMinWidth
-    minimumHeight: appStyle.windowMinHeight
+    width: Theme.windowWidth
+    height: Theme.windowHeight
+    minimumWidth: Theme.windowMinWidth
+    minimumHeight: Theme.windowMinHeight
     visible: true
     title: "LivePose"
-    
+
     Settings {
         id: appSettings
         category: "LivePose"
 
         property string lastSelectedModel: ""
-        property string lastCameraName: ""
+        property string lastBackend: ""
+        property string lastSourceName: ""
 
         property string poseDetectorModelPath: ""
         property string objectDetectorModelPath: ""
@@ -28,57 +30,49 @@ ApplicationWindow {
         property string oscIpAddress: "127.0.0.1"
         property string oscPortValue: "9000"
         property string lastVideoPath: ""
-        property string lastInputSource: "camera"
-        
+
         property int poseDetectorOutputMode: 0
         property real poseDetectorMinConfidence: 0.5
         property bool poseDetectorDrawSkeleton: true
         property int poseDetectorDataFormat: 0
     }
 
-    
-    DarkStyle {
-        id: dark_style
-    }
-    LightStyle {
-        id: light_style
+    // Drive the shared Theme singleton from the OS colour scheme (dark unless
+    // the system explicitly asks for light), replacing the old appStyle switch.
+    Binding {
+        target: Theme
+        property: "dark"
+        value: Application.styleHints.colorScheme !== Qt.ColorScheme.Light
     }
 
-    property var appStyle: {
-        if (Application.styleHints.colorScheme === Qt.ColorScheme.Unknown) {
-            return dark_style
-        }
-        return Application.styleHints.colorScheme === Qt.ColorScheme.Dark ? dark_style : light_style
-    }
-    
     palette {
         // Text colors
-        text: appStyle.textColor
-        windowText: appStyle.textColor
-        buttonText: appStyle.textColor
-        brightText: appStyle.textColorOnAccent
-        placeholderText: appStyle.textColorSecondary
-        
+        text: Theme.textColor
+        windowText: Theme.textColor
+        buttonText: Theme.textColor
+        brightText: Theme.textColorOnAccent
+        placeholderText: Theme.textColorSecondary
+
         // Background colors
-        window: appStyle.backgroundColor
-        base: appStyle.backgroundColorSecondary
-        alternateBase: appStyle.backgroundColorTertiary
-        
+        window: Theme.backgroundColor
+        base: Theme.backgroundColorSecondary
+        alternateBase: Theme.backgroundColorTertiary
+
         // Used by FileDialog header/footer
-        light: appStyle.backgroundColorSecondary
-        midlight: appStyle.backgroundColorTertiary
-        mid: appStyle.borderColor
-        dark: appStyle.borderColor
-        shadow: appStyle.backgroundColor
-        
+        light: Theme.backgroundColorSecondary
+        midlight: Theme.backgroundColorTertiary
+        mid: Theme.borderColor
+        dark: Theme.borderColor
+        shadow: Theme.backgroundColor
+
         // Interactive elements
-        button: appStyle.buttonBgInactive
-        highlight: appStyle.primaryColor
-        highlightedText: appStyle.textColorOnAccent
-        
+        button: Theme.buttonBgInactive
+        highlight: Theme.primaryColor
+        highlightedText: Theme.textColorOnAccent
+
         // Links
-        link: appStyle.primaryColor
-        linkVisited: appStyle.secondaryColor
+        link: Theme.primaryColor
+        linkVisited: Theme.secondaryColor
     }
 
     property var logger: QtObject {
@@ -88,7 +82,7 @@ ApplicationWindow {
         function clear() {
         }
     }
-    
+
     property int currentViewIndex: 0
     readonly property int runViewIndex: 0
     readonly property int logViewIndex: 1
@@ -96,76 +90,87 @@ ApplicationWindow {
     AboutDialog {
         id: aboutDialog
         parentWindow: mainWindow
+        appName: "LivePose"
+        appDescription: "A tool developed by the Société des Arts Technologiques"
+        appDetails: "This tool offers a way to track people's skeletons from a live video stream, and sends the results through the network (OSC)."
+        appWebsite: "https://gitlab.com/sat-mtl"
+        logoPath: "livepose/resources/images/LivePose_logo.png"
+        satLogoPath: "livepose/resources/images/sat_logo.png"
+        ossiaLogoPath: "livepose/resources/images/ossia_logo.png"
     }
-    
+
     RowLayout {
         id: rowLayout
         anchors.fill: parent
         spacing: 0
-        
+
         Rectangle {
             id: sidebar
-            width: appStyle.sidebarWidth
+            width: Theme.sidebarWidth
             Layout.fillHeight: true
-            color: appStyle.sidebarBackgroundColor
-            
+            color: Theme.sidebarBackgroundColor
+
             ColumnLayout {
                 id: sidebarColumn
                 anchors.fill: parent
                 anchors.leftMargin: 0
-                anchors.topMargin: appStyle.padding
+                anchors.topMargin: Theme.padding
                 anchors.rightMargin: 0
-                anchors.bottomMargin: appStyle.padding
-                spacing: appStyle.spacing
-                
+                anchors.bottomMargin: Theme.padding
+                spacing: Theme.spacing
+
                 Image {
                     id: logoImage
                     Layout.preferredWidth: 60
                     Layout.preferredHeight: 60
                     Layout.alignment: Qt.AlignHCenter
-                    Layout.topMargin: appStyle.padding
+                    Layout.topMargin: Theme.padding
                     source: "livepose/resources/images/LivePose_logo.png"
                     fillMode: Image.PreserveAspectFit
-                    
+
                     MouseArea {
                         anchors.fill: parent
                         onClicked: aboutDialog.open()
                         cursorShape: Qt.PointingHandCursor
                     }
                 }
-                
+
                 CustomButton {
                     id: runButton
                     text: "RUN"
                     Layout.fillWidth: true
-                    Layout.topMargin: appStyle.spacing
+                    Layout.topMargin: Theme.spacing
                     isActive: currentViewIndex === runViewIndex
                     onClicked: currentViewIndex = runViewIndex
                 }
-                
+
                 CustomButton {
                     id: logButton
                     text: "LOGS"
                     Layout.fillWidth: true
-                    Layout.topMargin: appStyle.spacing
+                    Layout.topMargin: Theme.spacing
                     isActive: currentViewIndex === logViewIndex
                     onClicked: currentViewIndex = logViewIndex
                 }
-                
+
                 Item {
                     Layout.fillHeight: true
                 }
             }
         }
-        
+
         StackLayout {
             id: stackView
             Layout.fillWidth: true
             Layout.fillHeight: true
             currentIndex: currentViewIndex
-            
+
             RunView { }
-            LogView { }
+            LogView {
+                id: logViewInstance
+                title: "Application Log"
+                Component.onCompleted: mainWindow.logger = logViewInstance
+            }
         }
     }
 }
