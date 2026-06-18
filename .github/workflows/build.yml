@@ -30,18 +30,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Build ossia score from the pose-detector branch (PR ossia/score#2068).
-      # Its ci/common.deps.sh clones score-addon-onnx and checks out its
-      # feature/detector branch (PR ossia/score-addon-onnx#29), which adds the
-      # Detection Model / Track ROI / Smoothing ports used by RunView.qml.
-      # Once #2068 is merged into continuous, drop this step and restore
-      # `release-tag: "continuous"` on the package step below.
-      - name: Build ossia score (pose-detector branch)
+      # Build ossia score from master: its ci/common.deps.sh clones
+      # score-addon-onnx (the pose detector landed on the addon's default
+      # branch), so the Pose Detector ports used by RunView.qml are present.
+      # We build from source (rather than release-tag: "continuous") to keep
+      # the slim plugin set below.
+      - name: Build ossia score
         id: score
         uses: ossia/actions/custom-score-build@master
         with:
           score-repo: "ossia/score"
-          score-ref: "feature/detector"
+          score-ref: "master"
           # Keep gfx (video preview/TextureSource), media (camera/video) and
           # avnd (the onnx Pose Detector is an Avendish/halp process). Disable
           # everything livepose doesn't use to slim the build.

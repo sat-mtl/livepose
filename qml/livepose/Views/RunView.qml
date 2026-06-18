@@ -46,10 +46,15 @@ Pane {
         "MediaPipeHands",
         "FaceMesh",
         "BlazeFace",
-        "MobileFaceNet"
+        "MobileFaceNet",
+        "RTMPoseFace",
+        "BoxDetection"
     ]
     property var poseDetectorOutputModes: ["SkeletonOnImage", "SkeletonOnly"]
-    property var poseDetectorDataFormats: ["Raw", "XYArray", "XYZArray", "LineArray"]
+    property var poseDetectorDataFormats: ["Raw", "XYArray", "XYZArray", "LineArray", "WorldXYZArray"]
+    property var poseDetectorSkeletonTypes: ["Native", "Coco17", "OpenPoseCoco18", "OpenPoseBody25", "Halpe26", "Mpii16", "H36m17", "Dlib68", "Hand21"]
+    property var poseDetectorMotionGates: ["None", "MaxSpeed", "Mahalanobis"]
+    property var poseDetectorReidPreprocess: ["Auto", "ImageNetRGB", "RawBGR", "RawRGB", "ZeroOneRGB", "ArcFaceRGB"]
 
     function updateModelPath() {
         if (!currentProcess) return
@@ -94,6 +99,23 @@ Pane {
             if (pose_Detector.track_IDs) Score.setValue(pose_Detector.track_IDs, trackIDsSwitch.checked)
             if (pose_Detector.max_Instances) Score.setValue(pose_Detector.max_Instances, maxInstancesSpinBox.value)
             if (pose_Detector.detector_Cadence) Score.setValue(pose_Detector.detector_Cadence, detectorCadenceSpinBox.value)
+            if (pose_Detector.draw_Landmarks) Score.setValue(pose_Detector.draw_Landmarks, drawLandmarksSwitch.checked)
+            if (pose_Detector.draw_Boxes) Score.setValue(pose_Detector.draw_Boxes, drawBoxesSwitch.checked)
+            if (pose_Detector.skeleton_Type) Score.setValue(pose_Detector.skeleton_Type, poseDetectorSkeletonTypes[skeletonTypeSelector.currentIndex])
+            if (pose_Detector.track_Memory) Score.setValue(pose_Detector.track_Memory, trackMemorySpinBox.value)
+            if (pose_Detector.hold_Frames) Score.setValue(pose_Detector.hold_Frames, holdFramesSpinBox.value)
+            if (pose_Detector.motion_Gate) Score.setValue(pose_Detector.motion_Gate, poseDetectorMotionGates[motionGateSelector.currentIndex])
+            if (pose_Detector.max_Speed) Score.setValue(pose_Detector.max_Speed, maxSpeedSlider.value)
+            if (pose_Detector.birth_Gate) Score.setValue(pose_Detector.birth_Gate, birthGateSwitch.checked)
+            if (pose_Detector.strict_Confirm) Score.setValue(pose_Detector.strict_Confirm, strictConfirmSwitch.checked)
+            if (pose_Detector.reid_Model) Score.setValue(pose_Detector.reid_Model, reidModelFilePathField.text)
+            if (pose_Detector.reid) Score.setValue(pose_Detector.reid, reidSwitch.checked)
+            if (pose_Detector.reid_Weight) Score.setValue(pose_Detector.reid_Weight, reidWeightSlider.value)
+            if (pose_Detector.reid_Preprocess) Score.setValue(pose_Detector.reid_Preprocess, poseDetectorReidPreprocess[reidPreprocessSelector.currentIndex])
+            if (pose_Detector.reid_Memory) Score.setValue(pose_Detector.reid_Memory, reidMemorySpinBox.value)
+            if (pose_Detector.reid_Margin) Score.setValue(pose_Detector.reid_Margin, reidMarginSlider.value)
+            if (pose_Detector.detection_Class) Score.setValue(pose_Detector.detection_Class, detectionClassSpinBox.value)
+            if (pose_Detector.class_File) Score.setValue(pose_Detector.class_File, classNamesFilePathField.text)
         } catch(e) { }
     }
     
@@ -143,6 +165,23 @@ Pane {
             property var track_IDs : Score.inlet(process_object, 11);
             property var max_Instances : Score.inlet(process_object, 12);
             property var detector_Cadence : Score.inlet(process_object, 13);
+            property var reid_Model : Score.inlet(process_object, 14);
+            property var reid : Score.inlet(process_object, 15);
+            property var reid_Weight : Score.inlet(process_object, 16);
+            property var reid_Preprocess : Score.inlet(process_object, 17);
+            property var draw_Boxes : Score.inlet(process_object, 18);
+            property var detection_Class : Score.inlet(process_object, 19);
+            property var draw_Landmarks : Score.inlet(process_object, 20);
+            property var motion_Gate : Score.inlet(process_object, 21);
+            property var max_Speed : Score.inlet(process_object, 22);
+            property var birth_Gate : Score.inlet(process_object, 23);
+            property var strict_Confirm : Score.inlet(process_object, 24);
+            property var skeleton_Type : Score.inlet(process_object, 25);
+            property var class_File : Score.inlet(process_object, 26);
+            property var track_Memory : Score.inlet(process_object, 27);
+            property var reid_Memory : Score.inlet(process_object, 28);
+            property var reid_Margin : Score.inlet(process_object, 29);
+            property var hold_Frames : Score.inlet(process_object, 30);
             property var out : Score.outlet(process_object, 0);
             property var detection : Score.outlet(process_object, 1);
             property var geometry : Score.outlet(process_object, 2);
@@ -244,7 +283,16 @@ Pane {
             showModelError = true
             return false
         }
-        if (!modelFilePathField.hasValidPath) {
+        // BoxDetection runs the Detection Model only (no landmark stage), so it
+        // requires a Detection Model rather than the Landmark Model.
+        var isBoxDetection = currentProcess.isPoseDetector && currentProcess.scenarioLabel === "BoxDetection"
+        if (isBoxDetection) {
+            if (detectionModelFilePathField.text.indexOf(".onnx") < 0) {
+                logger.log("Cannot start: BoxDetection needs a Detection Model (.onnx)")
+                showModelFileError = true
+                return false
+            }
+        } else if (!modelFilePathField.hasValidPath) {
             logger.log("Cannot start: No ONNX model file selected")
             showModelFileError = true
             return false
@@ -374,6 +422,44 @@ Pane {
         if (appSettings.poseDetectorDetectorCadence >= 1 && appSettings.poseDetectorDetectorCadence <= 30) {
             detectorCadenceSpinBox.value = appSettings.poseDetectorDetectorCadence
         }
+
+        drawLandmarksSwitch.checked = appSettings.poseDetectorDrawLandmarks !== false // default to true
+        drawBoxesSwitch.checked = appSettings.poseDetectorDrawBoxes === true // default to false
+        if (appSettings.poseDetectorSkeletonType >= 0 && appSettings.poseDetectorSkeletonType < poseDetectorSkeletonTypes.length) {
+            skeletonTypeSelector.currentIndex = appSettings.poseDetectorSkeletonType
+        }
+        if (appSettings.poseDetectorTrackMemory >= 1 && appSettings.poseDetectorTrackMemory <= 300) {
+            trackMemorySpinBox.value = appSettings.poseDetectorTrackMemory
+        }
+        if (appSettings.poseDetectorHoldFrames >= 0 && appSettings.poseDetectorHoldFrames <= 60) {
+            holdFramesSpinBox.value = appSettings.poseDetectorHoldFrames
+        }
+        if (appSettings.poseDetectorMotionGate >= 0 && appSettings.poseDetectorMotionGate < poseDetectorMotionGates.length) {
+            motionGateSelector.currentIndex = appSettings.poseDetectorMotionGate
+        }
+        if (appSettings.poseDetectorMaxSpeed >= 0.25 && appSettings.poseDetectorMaxSpeed <= 6) {
+            maxSpeedSlider.value = appSettings.poseDetectorMaxSpeed
+        }
+        birthGateSwitch.checked = appSettings.poseDetectorBirthGate !== false // default to true
+        strictConfirmSwitch.checked = appSettings.poseDetectorStrictConfirm === true // default to false
+        reidModelFilePathField.text = appSettings.poseDetectorReidModelPath
+        reidSwitch.checked = appSettings.poseDetectorReid === true // default to false
+        if (appSettings.poseDetectorReidWeight >= 0 && appSettings.poseDetectorReidWeight <= 1) {
+            reidWeightSlider.value = appSettings.poseDetectorReidWeight
+        }
+        if (appSettings.poseDetectorReidPreprocess >= 0 && appSettings.poseDetectorReidPreprocess < poseDetectorReidPreprocess.length) {
+            reidPreprocessSelector.currentIndex = appSettings.poseDetectorReidPreprocess
+        }
+        if (appSettings.poseDetectorReidMemory >= 0 && appSettings.poseDetectorReidMemory <= 18000) {
+            reidMemorySpinBox.value = appSettings.poseDetectorReidMemory
+        }
+        if (appSettings.poseDetectorReidMargin >= 0 && appSettings.poseDetectorReidMargin <= 0.5) {
+            reidMarginSlider.value = appSettings.poseDetectorReidMargin
+        }
+        if (appSettings.poseDetectorDetectionClass >= -1 && appSettings.poseDetectorDetectionClass <= 90) {
+            detectionClassSpinBox.value = appSettings.poseDetectorDetectionClass
+        }
+        classNamesFilePathField.text = appSettings.poseDetectorClassNamesFile
 
         if (appSettings.lastSelectedModel !== "" && availableProcesses.length > 0) {
             for (var i = 0; i < availableProcesses.length; i++) {
@@ -702,227 +788,565 @@ Pane {
                     }
                 }
                                 
-                CustomLabel {
-                    text: "Output Mode"
-                    font.bold: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                }
-                
-                CustomComboBox {
-                    id: outputModeSelector
+                TabBar {
+                    id: poseTabBar
                     Layout.fillWidth: true
                     visible: currentProcess && currentProcess.isPoseDetector
-                    model: poseDetectorOutputModes
-                    currentIndex: 0
-                    
-                    onCurrentIndexChanged: {
-                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.output_Mode) {
-                            try {
-                                var modeValue = poseDetectorOutputModes[currentIndex]
-                                Score.setValue(pose_Detector.output_Mode, modeValue)
-                                appSettings.poseDetectorOutputMode = currentIndex
-                            } catch(e) { }
-                        }
-                    }
+                    TabButton { text: "Output" }
+                    TabButton { text: "Tracking" }
+                    TabButton { text: "Re-ID" }
+                    TabButton { text: "Detection" }
+                    TabButton { text: "Smoothing" }
                 }
-                
-                RowLayout {
+
+                StackLayout {
                     Layout.fillWidth: true
                     visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
-                    
-                    CustomLabel {
-                        text: "Confidence: " + minConfidenceSlider.value.toFixed(2)
-                        font.bold: true
-                    }
-                    
-                    Slider {
-                        id: minConfidenceSlider
+                    currentIndex: poseTabBar.currentIndex
+
+                    // --- Output ---
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        Layout.minimumWidth: 80
-                        from: 0.0
-                        to: 1.0
-                        value: 0.3
-                        stepSize: 0.01
-                        onValueChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.min_Confidence) {
-                                try {
-                                    Score.setValue(pose_Detector.min_Confidence, value)
-                                    appSettings.poseDetectorMinConfidence = value
-                                } catch(e) { }
+                        spacing: appStyle.spacing
+
+                        CustomLabel { text: "Output Mode"; font.bold: true }
+                        CustomComboBox {
+                            id: outputModeSelector
+                            Layout.fillWidth: true
+                            model: poseDetectorOutputModes
+                            currentIndex: 0
+                            onCurrentIndexChanged: {
+                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.output_Mode) {
+                                    try {
+                                        Score.setValue(pose_Detector.output_Mode, poseDetectorOutputModes[currentIndex])
+                                        appSettings.poseDetectorOutputMode = currentIndex
+                                    } catch(e) { }
+                                }
+                            }
+                        }
+
+                        CustomLabel { text: "Data Format"; font.bold: true }
+                        CustomComboBox {
+                            id: dataFormatSelector
+                            Layout.fillWidth: true
+                            model: poseDetectorDataFormats
+                            currentIndex: 0
+                            onCurrentIndexChanged: {
+                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.data_Format) {
+                                    try {
+                                        Score.setValue(pose_Detector.data_Format, poseDetectorDataFormats[currentIndex])
+                                        appSettings.poseDetectorDataFormat = currentIndex
+                                    } catch(e) { }
+                                }
+                            }
+                        }
+
+                        CustomLabel { text: "Skeleton"; font.bold: true }
+                        CustomComboBox {
+                            id: skeletonTypeSelector
+                            Layout.fillWidth: true
+                            model: poseDetectorSkeletonTypes
+                            currentIndex: 0
+                            onCurrentIndexChanged: {
+                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.skeleton_Type) {
+                                    try {
+                                        Score.setValue(pose_Detector.skeleton_Type, poseDetectorSkeletonTypes[currentIndex])
+                                        appSettings.poseDetectorSkeletonType = currentIndex
+                                    } catch(e) { }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CheckBox {
+                                id: drawSkeletonSwitch
+                                text: "Draw Skeleton"
+                                checked: true
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Skeleton) {
+                                        try {
+                                            Score.setValue(pose_Detector.draw_Skeleton, checked)
+                                            appSettings.poseDetectorDrawSkeleton = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                            CheckBox {
+                                id: drawLandmarksSwitch
+                                text: "Draw Landmarks"
+                                checked: true
+                                Layout.leftMargin: appStyle.spacing
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Landmarks) {
+                                        try {
+                                            Score.setValue(pose_Detector.draw_Landmarks, checked)
+                                            appSettings.poseDetectorDrawLandmarks = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                            CheckBox {
+                                id: drawBoxesSwitch
+                                text: "Draw Boxes"
+                                checked: false
+                                Layout.leftMargin: appStyle.spacing
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Boxes) {
+                                        try {
+                                            Score.setValue(pose_Detector.draw_Boxes, checked)
+                                            appSettings.poseDetectorDrawBoxes = checked
+                                        } catch(e) { }
+                                    }
+                                }
                             }
                         }
                     }
-                    
-                    CheckBox {
-                        id: drawSkeletonSwitch
-                        text: "Draw Skeleton"
-                        checked: true
-                        Layout.leftMargin: appStyle.spacing
-                        onCheckedChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Skeleton) {
-                                try {
-                                    Score.setValue(pose_Detector.draw_Skeleton, checked)
-                                    appSettings.poseDetectorDrawSkeleton = checked
-                                } catch(e) { }
-                            }
-                        }
-                    }
-                }
-                
-                CustomLabel {
-                    text: "Data Format"
-                    font.bold: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                }
-                
-                CustomComboBox {
-                    id: dataFormatSelector
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    model: poseDetectorDataFormats
-                    currentIndex: 0
 
-                    onCurrentIndexChanged: {
-                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.data_Format) {
-                            try {
-                                var formatValue = poseDetectorDataFormats[currentIndex]
-                                Score.setValue(pose_Detector.data_Format, formatValue)
-                                appSettings.poseDetectorDataFormat = currentIndex
-                            } catch(e) { }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
-
-                    CheckBox {
-                        id: trackROISwitch
-                        text: "Track ROI"
-                        checked: false
-                        onCheckedChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
-                                try {
-                                    Score.setValue(pose_Detector.track_ROI, checked)
-                                    appSettings.poseDetectorTrackROI = checked
-                                } catch(e) { }
-                            }
-                        }
-                    }
-
-                    CheckBox {
-                        id: smoothingSwitch
-                        text: "Smoothing"
-                        checked: true
-                        Layout.leftMargin: appStyle.spacing
-                        onCheckedChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing) {
-                                try {
-                                    Score.setValue(pose_Detector.smoothing, checked)
-                                    appSettings.poseDetectorSmoothing = checked
-                                } catch(e) { }
-                            }
-                        }
-                    }
-
-                    CheckBox {
-                        id: trackIDsSwitch
-                        text: "Track IDs"
-                        checked: false
-                        Layout.leftMargin: appStyle.spacing
-                        onCheckedChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
-                                try {
-                                    Score.setValue(pose_Detector.track_IDs, checked)
-                                    appSettings.poseDetectorTrackIDs = checked
-                                } catch(e) { }
-                            }
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
-
-                    CustomLabel {
-                        text: "Smoothing: " + smoothingAmountSlider.value.toFixed(2)
-                        font.bold: true
-                    }
-
-                    Slider {
-                        id: smoothingAmountSlider
+                    // --- Tracking ---
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        Layout.minimumWidth: 80
-                        enabled: smoothingSwitch.checked
-                        from: 0.0
-                        to: 1.0
-                        value: 0.5
-                        stepSize: 0.01
-                        onValueChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing_Amount) {
-                                try {
-                                    Score.setValue(pose_Detector.smoothing_Amount, value)
-                                    appSettings.poseDetectorSmoothingAmount = value
-                                } catch(e) { }
+                        spacing: appStyle.spacing
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Confidence: " + minConfidenceSlider.value.toFixed(2); font.bold: true }
+                            Slider {
+                                id: minConfidenceSlider
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 80
+                                from: 0.0; to: 1.0; value: 0.3; stepSize: 0.01
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.min_Confidence) {
+                                        try {
+                                            Score.setValue(pose_Detector.min_Confidence, value)
+                                            appSettings.poseDetectorMinConfidence = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CheckBox {
+                                id: trackIDsSwitch
+                                text: "Track IDs"
+                                checked: false
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
+                                        try {
+                                            Score.setValue(pose_Detector.track_IDs, checked)
+                                            appSettings.poseDetectorTrackIDs = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                            CheckBox {
+                                id: trackROISwitch
+                                text: "Track ROI"
+                                checked: false
+                                Layout.leftMargin: appStyle.spacing
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
+                                        try {
+                                            Score.setValue(pose_Detector.track_ROI, checked)
+                                            appSettings.poseDetectorTrackROI = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Max Instances"; font.bold: true }
+                            SpinBox {
+                                id: maxInstancesSpinBox
+                                from: 1; to: 16; value: 5; editable: true
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Instances) {
+                                        try {
+                                            Score.setValue(pose_Detector.max_Instances, value)
+                                            appSettings.poseDetectorMaxInstances = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Track Memory"; font.bold: true }
+                            SpinBox {
+                                id: trackMemorySpinBox
+                                from: 1; to: 300; value: 30; editable: true
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_Memory) {
+                                        try {
+                                            Score.setValue(pose_Detector.track_Memory, value)
+                                            appSettings.poseDetectorTrackMemory = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Detection Hold"; font.bold: true }
+                            SpinBox {
+                                id: holdFramesSpinBox
+                                from: 0; to: 60; value: 6; editable: true
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.hold_Frames) {
+                                        try {
+                                            Score.setValue(pose_Detector.hold_Frames, value)
+                                            appSettings.poseDetectorHoldFrames = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Detector Cadence"; font.bold: true }
+                            SpinBox {
+                                id: detectorCadenceSpinBox
+                                from: 1; to: 30; value: 4; editable: true
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detector_Cadence) {
+                                        try {
+                                            Score.setValue(pose_Detector.detector_Cadence, value)
+                                            appSettings.poseDetectorDetectorCadence = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        CustomLabel { text: "Motion Gate"; font.bold: true }
+                        CustomComboBox {
+                            id: motionGateSelector
+                            Layout.fillWidth: true
+                            model: poseDetectorMotionGates
+                            currentIndex: 0
+                            onCurrentIndexChanged: {
+                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.motion_Gate) {
+                                    try {
+                                        Score.setValue(pose_Detector.motion_Gate, poseDetectorMotionGates[currentIndex])
+                                        appSettings.poseDetectorMotionGate = currentIndex
+                                    } catch(e) { }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Max Speed: " + maxSpeedSlider.value.toFixed(2); font.bold: true }
+                            Slider {
+                                id: maxSpeedSlider
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 80
+                                from: 0.25; to: 6.0; value: 2.0; stepSize: 0.05
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Speed) {
+                                        try {
+                                            Score.setValue(pose_Detector.max_Speed, value)
+                                            appSettings.poseDetectorMaxSpeed = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CheckBox {
+                                id: birthGateSwitch
+                                text: "Birth Gate"
+                                checked: true
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.birth_Gate) {
+                                        try {
+                                            Score.setValue(pose_Detector.birth_Gate, checked)
+                                            appSettings.poseDetectorBirthGate = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                            CheckBox {
+                                id: strictConfirmSwitch
+                                text: "Strict Confirmation"
+                                checked: false
+                                Layout.leftMargin: appStyle.spacing
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.strict_Confirm) {
+                                        try {
+                                            Score.setValue(pose_Detector.strict_Confirm, checked)
+                                            appSettings.poseDetectorStrictConfirm = checked
+                                        } catch(e) { }
+                                    }
+                                }
                             }
                         }
                     }
-                }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
+                    // --- Re-ID ---
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: appStyle.spacing
 
-                    CustomLabel {
-                        text: "Max Instances"
-                        font.bold: true
-                    }
+                        CustomLabel { text: "Re-ID Model (ONNX)"; font.bold: true }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            CustomTextField {
+                                id: reidModelFilePathField
+                                Layout.fillWidth: true
+                                text: ""
+                                placeholderText: "Optional Re-ID embedding ONNX..."
+                                onTextChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Model) {
+                                        try { Score.setValue(pose_Detector.reid_Model, text) } catch(e) { }
+                                    }
+                                    appSettings.poseDetectorReidModelPath = text
+                                }
+                            }
+                            Button {
+                                text: "Browse"
+                                font.family: appStyle.fontFamily
+                                font.pixelSize: appStyle.fontSizeBody
+                                onClicked: reidModelFileDialog.open()
+                            }
+                            Button {
+                                text: "Clear"
+                                font.family: appStyle.fontFamily
+                                font.pixelSize: appStyle.fontSizeBody
+                                visible: reidModelFilePathField.text !== ""
+                                onClicked: reidModelFilePathField.text = ""
+                            }
+                        }
+                        FileDialog {
+                            id: reidModelFileDialog
+                            title: "Select Re-ID Model (ONNX)"
+                            nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
+                            onAccepted: {
+                                if (!selectedFile) return
+                                var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
+                                if (filePath.startsWith("file://")) filePath = filePath.substring(7)
+                                reidModelFilePathField.text = filePath
+                            }
+                        }
 
-                    SpinBox {
-                        id: maxInstancesSpinBox
-                        from: 1
-                        to: 16
-                        value: 5
-                        editable: true
-                        onValueChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Instances) {
-                                try {
-                                    Score.setValue(pose_Detector.max_Instances, value)
-                                    appSettings.poseDetectorMaxInstances = value
-                                } catch(e) { }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CheckBox {
+                                id: reidSwitch
+                                text: "Re-ID"
+                                checked: false
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid) {
+                                        try {
+                                            Score.setValue(pose_Detector.reid, checked)
+                                            appSettings.poseDetectorReid = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Weight: " + reidWeightSlider.value.toFixed(2); font.bold: true }
+                            Slider {
+                                id: reidWeightSlider
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 80
+                                from: 0.0; to: 1.0; value: 0.25; stepSize: 0.01
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Weight) {
+                                        try {
+                                            Score.setValue(pose_Detector.reid_Weight, value)
+                                            appSettings.poseDetectorReidWeight = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        CustomLabel { text: "Re-ID Preprocess"; font.bold: true }
+                        CustomComboBox {
+                            id: reidPreprocessSelector
+                            Layout.fillWidth: true
+                            model: poseDetectorReidPreprocess
+                            currentIndex: 0
+                            onCurrentIndexChanged: {
+                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Preprocess) {
+                                    try {
+                                        Score.setValue(pose_Detector.reid_Preprocess, poseDetectorReidPreprocess[currentIndex])
+                                        appSettings.poseDetectorReidPreprocess = currentIndex
+                                    } catch(e) { }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Re-ID Memory"; font.bold: true }
+                            SpinBox {
+                                id: reidMemorySpinBox
+                                from: 0; to: 18000; value: 1800; editable: true
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Memory) {
+                                        try {
+                                            Score.setValue(pose_Detector.reid_Memory, value)
+                                            appSettings.poseDetectorReidMemory = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Re-ID Margin: " + reidMarginSlider.value.toFixed(2); font.bold: true }
+                            Slider {
+                                id: reidMarginSlider
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 80
+                                from: 0.0; to: 0.5; value: 0.1; stepSize: 0.01
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Margin) {
+                                        try {
+                                            Score.setValue(pose_Detector.reid_Margin, value)
+                                            appSettings.poseDetectorReidMargin = value
+                                        } catch(e) { }
+                                    }
+                                }
                             }
                         }
                     }
-                }
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    spacing: appStyle.spacing
+                    // --- Detection ---
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: appStyle.spacing
 
-                    CustomLabel {
-                        text: "Detector Cadence"
-                        font.bold: true
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Detection Class"; font.bold: true }
+                            SpinBox {
+                                id: detectionClassSpinBox
+                                from: -1; to: 90; value: -1; editable: true
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detection_Class) {
+                                        try {
+                                            Score.setValue(pose_Detector.detection_Class, value)
+                                            appSettings.poseDetectorDetectionClass = value
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        CustomLabel { text: "Class Names File (.txt)"; font.bold: true }
+                        RowLayout {
+                            Layout.fillWidth: true
+                            CustomTextField {
+                                id: classNamesFilePathField
+                                Layout.fillWidth: true
+                                text: ""
+                                placeholderText: "Optional class names (empty = COCO-80)..."
+                                onTextChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.class_File) {
+                                        try { Score.setValue(pose_Detector.class_File, text) } catch(e) { }
+                                    }
+                                    appSettings.poseDetectorClassNamesFile = text
+                                }
+                            }
+                            Button {
+                                text: "Browse"
+                                font.family: appStyle.fontFamily
+                                font.pixelSize: appStyle.fontSizeBody
+                                onClicked: classNamesFileDialog.open()
+                            }
+                            Button {
+                                text: "Clear"
+                                font.family: appStyle.fontFamily
+                                font.pixelSize: appStyle.fontSizeBody
+                                visible: classNamesFilePathField.text !== ""
+                                onClicked: classNamesFilePathField.text = ""
+                            }
+                        }
+                        FileDialog {
+                            id: classNamesFileDialog
+                            title: "Select Class Names File"
+                            nameFilters: ["Text Files (*.txt)", "All Files (*)"]
+                            onAccepted: {
+                                if (!selectedFile) return
+                                var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
+                                if (filePath.startsWith("file://")) filePath = filePath.substring(7)
+                                classNamesFilePathField.text = filePath
+                            }
+                        }
                     }
 
-                    SpinBox {
-                        id: detectorCadenceSpinBox
-                        from: 1
-                        to: 30
-                        value: 4
-                        editable: true
-                        onValueChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detector_Cadence) {
-                                try {
-                                    Score.setValue(pose_Detector.detector_Cadence, value)
-                                    appSettings.poseDetectorDetectorCadence = value
-                                } catch(e) { }
+                    // --- Smoothing ---
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: appStyle.spacing
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CheckBox {
+                                id: smoothingSwitch
+                                text: "Smoothing"
+                                checked: true
+                                onCheckedChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing) {
+                                        try {
+                                            Score.setValue(pose_Detector.smoothing, checked)
+                                            appSettings.poseDetectorSmoothing = checked
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+                            CustomLabel { text: "Smoothing: " + smoothingAmountSlider.value.toFixed(2); font.bold: true }
+                            Slider {
+                                id: smoothingAmountSlider
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 80
+                                enabled: smoothingSwitch.checked
+                                from: 0.0; to: 1.0; value: 0.5; stepSize: 0.01
+                                onValueChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing_Amount) {
+                                        try {
+                                            Score.setValue(pose_Detector.smoothing_Amount, value)
+                                            appSettings.poseDetectorSmoothingAmount = value
+                                        } catch(e) { }
+                                    }
+                                }
                             }
                         }
                     }

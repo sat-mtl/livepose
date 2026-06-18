@@ -42,6 +42,28 @@ ApplicationWindow {
         property bool poseDetectorTrackIDs: false
         property int poseDetectorMaxInstances: 5
         property int poseDetectorDetectorCadence: 4
+
+        // Output
+        property bool poseDetectorDrawLandmarks: true
+        property bool poseDetectorDrawBoxes: false
+        property int poseDetectorSkeletonType: 0
+        // Tracking
+        property int poseDetectorTrackMemory: 30
+        property int poseDetectorHoldFrames: 6
+        property int poseDetectorMotionGate: 0
+        property real poseDetectorMaxSpeed: 2.0
+        property bool poseDetectorBirthGate: true
+        property bool poseDetectorStrictConfirm: false
+        // Re-ID
+        property string poseDetectorReidModelPath: ""
+        property bool poseDetectorReid: false
+        property real poseDetectorReidWeight: 0.25
+        property int poseDetectorReidPreprocess: 0
+        property int poseDetectorReidMemory: 1800
+        property real poseDetectorReidMargin: 0.1
+        // Detection
+        property int poseDetectorDetectionClass: -1
+        property string poseDetectorClassNamesFile: ""
     }
 
     
