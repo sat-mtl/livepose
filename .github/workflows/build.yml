@@ -61,8 +61,9 @@ jobs:
         with:
           app-name: "LivePose"
           qml-files: "qml"
-          # Optional: Add your score file here
-          score-file: "score/app.score"
+          # No score-file: RunView.qml builds the Camera -> Pose Detector -> OSC
+          # pipeline dynamically via the Score JS API, so the app starts from an
+          # empty document (clean root interval) instead of a pre-authored score.
           # Use the score build produced above instead of a published SDK.
           score-build-id: ${{ steps.score.outputs.artifact-id }}
           platforms: "${{ matrix.platform }}"
