@@ -22,8 +22,6 @@ ApplicationWindow {
         property string lastCameraName: ""
 
         property string poseDetectorModelPath: ""
-        property string objectDetectorModelPath: ""
-        property string objectDetectorClassesPath: ""
 
         property string oscIpAddress: "127.0.0.1"
         property string oscPortValue: "9000"

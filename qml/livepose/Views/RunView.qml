@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
-import QtQuick.Dialogs
 import QtCore
 import Score.UI as UI
 import livepose
@@ -29,9 +28,7 @@ Pane {
     property bool showModelError: false
     property bool showCameraError: false
     property bool showModelFileError: false
-    property bool showClassesFileError: false
     property var modelPaths: ({})
-    property var classesPaths: ({})
     property string inputSource: "camera"
     property string videoFilePath: ""
     
@@ -62,26 +59,14 @@ Pane {
         var filePath = modelFilePathField.text
         if (!filePath) return
         
-        var modelPort = null
-        if (currentProcess.isPoseDetector) {
-            modelPort = pose_Detector.model
-        } else if (currentProcess.isObjectDetector) {
-            modelPort = object_Detector.model
-        }
-        
-        if (modelPort) {
-            Score.setValue(modelPort, filePath)
+        if (pose_Detector.model) {
+            Score.setValue(pose_Detector.model, filePath)
         }
     }
 
     function saveAllFieldsToScore() {
         updateModelPath()
-        if (currentProcess && currentProcess.isObjectDetector && object_Detector.classes) {
-            try { Score.setValue(object_Detector.classes, classesFilePathField.text) } catch(e) { }
-        }
-        if (currentProcess && currentProcess.isPoseDetector) {
-            syncPoseDetectorSettings()
-        }
+        syncPoseDetectorSettings()
     }
     
     function syncPoseDetectorSettings() {
@@ -119,38 +104,17 @@ Pane {
         } catch(e) { }
     }
     
-    function updateInputSourceMixer() {
-        var cameraAlpha = inputSource === "camera" ? 1.0 : 0.0
-        var videoAlpha = inputSource === "video" ? 1.0 : 0.0
-        try {
-            if (pose_video_Mixer.alpha1) Score.setValue(pose_video_Mixer.alpha1, cameraAlpha)
-            if (pose_video_Mixer.alpha2) Score.setValue(pose_video_Mixer.alpha2, videoAlpha)
-            if (obj_video_Mixer.alpha1) Score.setValue(obj_video_Mixer.alpha1, cameraAlpha)
-            if (obj_video_Mixer.alpha2) Score.setValue(obj_video_Mixer.alpha2, videoAlpha)
-        } catch(e) { }
-    }
-    
     function setVideoPath(path) {
         if (path === "") return
         try {
-            if (pose_video.process_object) pose_video.process_object.path = path
-            if (obj_video.process_object) obj_video.process_object.path = path
+            if (video_in.process_object) video_in.process_object.path = path
         } catch(e) { }
     }
 
     Item {
         id: objects
-        QtObject { id: object_Detector
-            property var process_object : Score.find("Object Detector");
-            property var input : Score.inlet(process_object, 0);
-            property var model : Score.inlet(process_object, 1);
-            property var classes : Score.inlet(process_object, 2);
-            property var model_input_resolution : Score.inlet(process_object, 3);
-            property var out : Score.outlet(process_object, 0);
-            property var detection : Score.outlet(process_object, 1);
-        }
         QtObject { id: pose_Detector
-            property var process_object : Score.find("Pose Detector");
+            property var process_object : null;
             property var input : Score.inlet(process_object, 0);
             property var model : Score.inlet(process_object, 1);
             property var workflow : Score.inlet(process_object, 2);
@@ -189,71 +153,33 @@ Pane {
             property var poses_geometry : Score.outlet(process_object, 4);
             property var count : Score.outlet(process_object, 5);
         }
-        QtObject { id: pose_video
-            property var process_object : Score.find("pose video");
+        QtObject { id: video_in
+            property var process_object : null;
         }
-        QtObject { id: obj_video
-            property var process_object : Score.find("obj video");
-        }
-        QtObject { id: pose_video_Mixer
-            property var process_object : Score.find("Pose Video Mixer");
-            property var alpha1 : Score.inlet(process_object, 8);
-            property var alpha2 : Score.inlet(process_object, 9);
-        }
-        QtObject { id: obj_video_Mixer
-            property var process_object : Score.find("Obj Video Mixer");
-            property var alpha1 : Score.inlet(process_object, 8);
-            property var alpha2 : Score.inlet(process_object, 9);
+        QtObject { id: preview_mapper
+            property var process_object : null;
         }
     }
 
-    function getVideoInPortViaMapper(videoMapperLabel) {
-         if (!videoMapperLabel) return null;
-         var videoMapper = Score.find(videoMapperLabel);
-         if (!videoMapper) return null 
-         return Score.port(videoMapper, "in");
-     }
+    readonly property string previewPassthroughShader: '/*{ "ISFVSN": "2", "DESCRIPTION": "passthrough", "INPUTS": [ { "NAME": "inputImage", "TYPE": "image" } ] }*/\nvoid main() { gl_FragColor = IMG_THIS_PIXEL(inputImage); }'
 
-    function findAllScenarios() {
+    function buildBackends() {
         availableProcesses = []
-        var poseDetectorMapper = Score.find("pose_detector Video Mapper")
-        if (poseDetectorMapper) {
-            for (var w = 0; w < poseDetectorWorkflows.length; w++) {
-                availableProcesses.push({
-                    scenarioLabel: poseDetectorWorkflows[w],
-                    videoMapperLabel: "pose_detector Video Mapper",
-                    process: poseDetectorMapper,
-                    triggerName: "pose_detectortrigger",
-                    isPoseDetector: true,
-                    isObjectDetector: false
-                })
-            }
-        }
-        
-        var objectDetectorMapper = Score.find("object_detector Video Mapper")
-        if (objectDetectorMapper) {
+        for (var w = 0; w < poseDetectorWorkflows.length; w++) {
             availableProcesses.push({
-                scenarioLabel: "ResNET (Object Detection)",
-                videoMapperLabel: "object_detector Video Mapper",
-                process: objectDetectorMapper,
-                triggerName: "object_detectortrigger",
-                isPoseDetector: false,
-                isObjectDetector: true
+                scenarioLabel: poseDetectorWorkflows[w],
+                processName: "Pose Detector",
+                isPoseDetector: true
             })
         }
-    
+
         var modelList = [" "]
         for (var j = 0; j < availableProcesses.length; j++) {
             modelList.push(availableProcesses[j].scenarioLabel)
         }
-
-        if (availableProcesses.length > 0) {
-            backendSelector.model = modelList
-            backendSelector.currentIndex = 1
-            currentProcess = availableProcesses[0]
-        } else {
-            backendSelector.model = [" "]
-        }
+        backendSelector.model = modelList
+        backendSelector.currentIndex = 1
+        currentProcess = availableProcesses[0]
     }
 
     function enumerateCameras() {
@@ -276,9 +202,8 @@ Pane {
         showModelError = false
         showCameraError = false
         showModelFileError = false
-        showClassesFileError = false
-        
-        if (!currentProcess || !currentProcess.process) {
+
+        if (!currentProcess) {
             logger.log("Cannot start: No AI model selected")
             showModelError = true
             return false
@@ -297,11 +222,6 @@ Pane {
             showModelFileError = true
             return false
         }
-        if (currentProcess.isObjectDetector && !classesFilePathField.hasValidPath) {
-            logger.log("Cannot start: No classes file selected for object detection")
-            showClassesFileError = true
-            return false
-        }
         if (inputSource === "camera" && cameraSelector.currentIndex <= 0) {
             logger.log("Cannot start: No camera selected")
             showCameraError = true
@@ -318,40 +238,67 @@ Pane {
         if (!validateBeforeStart()) return;
         if (isStarting || isRunning) return;
         isStarting = true;
-        saveAllFieldsToScore()
 
         Score.startMacro()
+
+        var proc = Score.createProcess(Score.rootInterval(), "Pose Detector", "")
+        if (!proc) {
+            Score.endMacro()
+            isStarting = false
+            logger.log("Cannot start: failed to create the Pose Detector process")
+            return
+        }
+        Score.setName(proc, "livepose detector")
+        pose_Detector.process_object = proc
+
+        var inPort = Score.inlet(proc, 0)
         if (inputSource === "camera" && cameraSelector.currentIndex > 0) {
             const cameraSettings = cameraList[cameraSelector.currentIndex - 1].settings
-            Score.removeDevice("Camera")
+            try { Score.removeDevice("Camera") } catch(e) {}
             Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", cameraSettings)
-            const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel);
-            if (inputPort) Score.setAddress(inputPort, "Camera:/")
+            if (inPort) Score.setAddress(inPort, "Camera:/")
+        } else if (inputSource === "video" && videoFilePath !== "") {
+            var vid = Score.createProcess(Score.rootInterval(), "Video", "")
+            video_in.process_object = vid
+            if (vid) {
+                try { vid.path = videoFilePath } catch(e) {}
+                var vidOut = Score.outlet(vid, 0)
+                if (vidOut && inPort) Score.createCable(vidOut, inPort)
+            }
         }
-        if (inputSource === "video" && videoFilePath !== "") {
-            setVideoPath(videoFilePath)
-        }
-        updateInputSourceMixer()
 
-        if (!oscReady) {
-            try { Score.removeDevice("MyOSC"); } catch(e) {}
-            const host = (oscIpAddress.text || "127.0.0.1").trim();
-            const outPort = parseInt(oscPort.text) || 9000;
-            const inPort = (outPort === 9000 ? 9001 : outPort + 1);
-            Score.createOSCDevice("MyOSC", host, inPort, outPort);
-            try { Score.createAddress("MyOSC:/skeleton", "List"); } catch (_) {}
-            oscReady = true;
+        var mapper = Score.createProcess(Score.rootInterval(), "ISF Shader", "")
+        if (mapper) {
+            preview_mapper.process_object = mapper
+            Score.loadPreset(mapper, JSON.stringify({
+                Key: { Uuid: "74ca45ff-92c9-44a0-8f1a-754dea05ee1b", Effect: "" },
+                Name: "ISF Shader",
+                Preset: { Fragment: previewPassthroughShader, Vertex: "", Controls: [] }
+            }))
+            Score.setName(mapper, "livepose preview")
+            var detOut = Score.outlet(proc, 0)
+            var mapIn = Score.inlet(mapper, 0)
+            if (detOut && mapIn) Score.createCable(detOut, mapIn)
         }
+
+        saveAllFieldsToScore()
+
+        try { Score.removeDevice("MyOSC") } catch(e) {}
+        const host = (oscIpAddress.text || "127.0.0.1").trim();
+        const outPort = parseInt(oscPort.text) || 9000;
+        const inOscPort = (outPort === 9000 ? 9001 : outPort + 1);
+        Score.createOSCDevice("MyOSC", host, inOscPort, outPort);
+        try { Score.createAddress("MyOSC:/skeleton", "List") } catch(e) {}
+        var dataOut = Score.outlet(proc, 2)
+        if (dataOut) Score.setAddress(dataOut, "MyOSC:/skeleton")
+        oscReady = true;
 
         Score.endMacro();
         Score.play();
-        const trigger = Score.find(currentProcess.triggerName);
-        if (trigger && typeof trigger.triggeredByGui === 'function')
-            trigger.triggeredByGui();
         isRunning = true;
         isStarting = false;
         var inputDesc = inputSource === "camera" ? cameraPrettyNamesList[cameraSelector.currentIndex - 1] : videoFilePath
-        logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + oscIpAddress.text + ":" + oscPort.text);
+        logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + host + ":" + outPort);
     }
 
     function stopCurrentProcess() {
@@ -360,6 +307,12 @@ Pane {
         Score.startMacro();
         try { Score.removeDevice("MyOSC"); } catch(e) {}
         try { Score.removeDevice("Camera"); } catch(e) {}
+        try { if (pose_Detector.process_object) Score.remove(pose_Detector.process_object) } catch(e) {}
+        try { if (preview_mapper.process_object) Score.remove(preview_mapper.process_object) } catch(e) {}
+        try { if (video_in.process_object) Score.remove(video_in.process_object) } catch(e) {}
+        pose_Detector.process_object = null
+        preview_mapper.process_object = null
+        video_in.process_object = null
         Score.endMacro();
         isRunning = false;
         isStarting = false;
@@ -383,7 +336,7 @@ Pane {
 
     Component.onCompleted: {
         enumerateCameras();
-        findAllScenarios();
+        buildBackends();
 
         restoreSavedSettings();
     }
@@ -391,8 +344,6 @@ Pane {
     function restoreSavedSettings() {
 
         modelPaths["pose_detector"] = appSettings.poseDetectorModelPath
-        modelPaths["object_detector"] = appSettings.objectDetectorModelPath
-        classesPaths["object_detector"] = appSettings.objectDetectorClassesPath
 
         oscIpAddress.text = appSettings.oscIpAddress
         oscPort.text = appSettings.oscPortValue
@@ -485,278 +436,107 @@ Pane {
         saveAllFieldsToScore()
     }
 
-    ScrollView {
+    SplitView {
         anchors.fill: parent
-        contentWidth: availableWidth
+        orientation: Qt.Horizontal
+        handle: Rectangle {
+            implicitWidth: 6
+            color: SplitHandle.pressed ? appStyle.primaryColor
+                 : SplitHandle.hovered ? appStyle.borderColor : appStyle.separatorColor
+        }
 
-        ColumnLayout {
-            x: appStyle.padding
-            width: parent.width - 2 * appStyle.padding
-            spacing: appStyle.spacing * 0.75
-
-            CustomLabel {
-                text: "Input Source"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
-                Layout.topMargin: appStyle.padding
-            }
-            
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: appStyle.spacing
-                
-                Button {
-                    text: "Camera"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    font.bold: inputSource === "camera"
-                    Layout.fillWidth: true
-                    onClicked: {
-                        inputSource = "camera"
-                        appSettings.lastInputSource = "camera"
-                        updateInputSourceMixer()
-                    }
-                }
-                
-                Button {
-                    text: "Video File"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    font.bold: inputSource === "video"
-                    Layout.fillWidth: true
-                    onClicked: {
-                        inputSource = "video"
-                        appSettings.lastInputSource = "video"
-                        updateInputSourceMixer()
-                    }
-                }
-            }
-
-            CustomComboBox {
-                id: cameraSelector
-                Layout.fillWidth: true
-                visible: inputSource === "camera"
-                model: [" ", ...cameraPrettyNamesList]
-                
-                onCurrentIndexChanged: {
-                    showCameraError = false
-                    if (currentIndex <= 0) return;
-                    Score.startMacro()
-                    const camera_name = cameraPrettyNamesList[currentIndex - 1]
-                    const camera_settings = cameraList[currentIndex - 1].settings
-                    appSettings.lastCameraName = camera_name
-                    Score.removeDevice("Camera")
-                    Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
-                    if (currentProcess) {
-                        const inputPort = getVideoInPortViaMapper(currentProcess.videoMapperLabel)
-                        if (inputPort) Score.setAddress(inputPort, "Camera:/")
-                    }
-                    Score.endMacro()
-                }
-            }
-            
-            CustomLabel {
-                visible: showCameraError && inputSource === "camera"
-                text: "Please select a camera"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
-            }
-            
-            RowLayout {
-                Layout.fillWidth: true
-                visible: inputSource === "video"
-                
-                CustomTextField {
-                    id: videoFilePathField
-                    Layout.fillWidth: true
-                    placeholderText: "Select video file..."
-                    text: videoFilePath
-                    onTextChanged: {
-                        videoFilePath = text
-                        setVideoPath(text)
-                        appSettings.lastVideoPath = text
-                    }
-                }
-                
-                Button {
-                    text: "Browse"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    onClicked: videoFileDialog.open()
-                }
-            }
-            
-            FileDialog {
-                id: videoFileDialog
-                title: "Select Video File"
-                nameFilters: ["Video Files (*.mp4 *.avi *.mov *.mkv *.webm)", "All Files (*)"]
-                onAccepted: {
-                    if (!selectedFile) return
-                    var filePath = selectedFile.toString()
-                    if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                    videoFilePathField.text = filePath
-                }
-            }
-            
-            CustomLabel {
-                visible: inputSource === "video" && videoFilePath === ""
-                text: "Please select a video file"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: appStyle.separatorColor
-            }
-
-            CustomLabel {
-                text: "Model Configuration"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeTitle
-                Layout.topMargin: appStyle.padding
-            }
-
-            CustomLabel {
-                text: "Choose AI Model"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
-            }
-
-            CustomComboBox {
-                id: backendSelector
-                Layout.fillWidth: true
-                model: [" "]
-                
-                function updateModel(currentIndex) {
-                    restartIfRunning()
-                    showModelError = false
-                    if (currentProcess && currentProcess.scenarioLabel) {
-                        var oldLabel = currentProcess.scenarioLabel
-                        var saveKey = currentProcess.isPoseDetector ? "pose_detector" : 
-                                      currentProcess.isObjectDetector ? "object_detector" : oldLabel
-                        if (modelFilePathField.text) modelPaths[saveKey] = modelFilePathField.text
-                        if (classesFilePathField.text && currentProcess.isObjectDetector) classesPaths["object_detector"] = classesFilePathField.text
-                    }
-                    if (currentIndex > 0) {
-                        currentProcess = availableProcesses[currentIndex - 1];
-                        var newLabel = currentProcess.scenarioLabel;
-                        appSettings.lastSelectedModel = newLabel;
-                        var loadKey = currentProcess.isPoseDetector ? "pose_detector" : 
-                                      currentProcess.isObjectDetector ? "object_detector" : newLabel
-                        modelFilePathField.text = modelPaths[loadKey] || "";
-                        classesFilePathField.text = currentProcess.isObjectDetector ? (classesPaths["object_detector"] || "") : "";
-                        if (currentProcess.isPoseDetector && pose_Detector.workflow) {
-                            try { Score.setValue(pose_Detector.workflow, newLabel) } catch(e) { }
-                        }
-                    } else {
-                        currentProcess = null;
-                        modelFilePathField.text = "";
-                        classesFilePathField.text = "";
-                    }
-                }
-
-                onCurrentIndexChanged: updateModel(currentIndex)
-            }
-            
-            CustomLabel {
-                visible: showModelError
-                text: "Please select a model"
-                color: appStyle.errorColor
-                font.pixelSize: appStyle.fontSizeSmall
-            }
+        ScrollView {
+            SplitView.fillWidth: true
+            SplitView.minimumWidth: 380
+            contentWidth: availableWidth
 
             ColumnLayout {
-                Layout.fillWidth: true
-                visible: currentProcess !== null
-                spacing: appStyle.spacing
+                x: appStyle.padding
+                width: parent.width - 2 * appStyle.padding
+                spacing: appStyle.spacing * 0.75
 
                 CustomLabel {
-                    text: (currentProcess && currentProcess.isPoseDetector) ? "Landmark Model (ONNX)" : "ONNX Model File"
+                    text: "Input Source"
                     font.bold: true
+                    font.pixelSize: appStyle.fontSizeSubtitle
+                    Layout.topMargin: appStyle.padding
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    
-                    CustomTextField { 
-                        id: modelFilePathField
-                        Layout.fillWidth: true
-                        text: ""
-                        
-                        property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
-                        placeholderText: "Select ONNX model file..."
-                        
-                        property var currentModelPort: {
-                            if (!runView.currentProcess) return null
-                            try {
-                                if (runView.currentProcess.isPoseDetector && pose_Detector) return pose_Detector.model
-                                if (runView.currentProcess.isObjectDetector && object_Detector) return object_Detector.model
-                            } catch(e) { }
-                            return null
-                        }
-                        
-                        onTextChanged: {
-                            showModelFileError = false
-                            if (currentModelPort) {
-                                try { Score.setValue(currentModelPort, text) } catch(e) { }
-                            }
-                            if (runView.currentProcess) {
-                                if (runView.currentProcess.isPoseDetector) appSettings.poseDetectorModelPath = text
-                                else if (runView.currentProcess.isObjectDetector) appSettings.objectDetectorModelPath = text
-                            }
-                        }
-                    }
-                    
+                    spacing: appStyle.spacing
+
                     Button {
-                        text: "Browse"
+                        text: "Camera"
                         font.family: appStyle.fontFamily
                         font.pixelSize: appStyle.fontSizeBody
-                        onClicked: onnxFileDialog.open()
+                        font.bold: inputSource === "camera"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            inputSource = "camera"
+                            appSettings.lastInputSource = "camera"
+                            restartIfRunning()
+                        }
+                    }
+
+                    Button {
+                        text: "Video File"
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        font.bold: inputSource === "video"
+                        Layout.fillWidth: true
+                        onClicked: {
+                            inputSource = "video"
+                            appSettings.lastInputSource = "video"
+                            restartIfRunning()
+                        }
                     }
                 }
-                
-                FileDialog {
-                    id: onnxFileDialog
-                    title: "Select ONNX Model File"
-                    nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
-                    onAccepted: {
-                        if (!selectedFile) return
-                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
-                        if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                        modelFilePathField.text = filePath
+
+                CustomComboBox {
+                    id: cameraSelector
+                    Layout.fillWidth: true
+                    visible: inputSource === "camera"
+                    model: [" ", ...cameraPrettyNamesList]
+
+                    onCurrentIndexChanged: {
+                        showCameraError = false
+                        if (currentIndex <= 0) return;
+                        appSettings.lastCameraName = cameraPrettyNamesList[currentIndex - 1]
+                        if (isRunning && inputSource === "camera") {
+                            Score.startMacro()
+                            const camera_settings = cameraList[currentIndex - 1].settings
+                            Score.removeDevice("Camera")
+                            Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
+                            if (pose_Detector.process_object) {
+                                const inputPort = Score.inlet(pose_Detector.process_object, 0)
+                                if (inputPort) Score.setAddress(inputPort, "Camera:/")
+                            }
+                            Score.endMacro()
+                        }
                     }
                 }
 
                 CustomLabel {
-                    visible: showModelFileError
-                    text: "Please select an ONNX model file"
+                    visible: showCameraError && inputSource === "camera"
+                    text: "Please select a camera"
                     color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
                 }
 
-                CustomLabel {
-                    text: "Detection Model (optional, two-stage)"
-                    font.bold: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                }
-
                 RowLayout {
                     Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
+                    visible: inputSource === "video"
 
                     CustomTextField {
-                        id: detectionModelFilePathField
+                        id: videoFilePathField
                         Layout.fillWidth: true
-                        text: ""
-                        placeholderText: "Optional stage-1 detector ONNX (empty = single-stage)..."
-
+                        placeholderText: "Select video file..."
+                        text: videoFilePath
                         onTextChanged: {
-                            if (currentProcess && currentProcess.isPoseDetector && pose_Detector.det_Model) {
-                                try { Score.setValue(pose_Detector.det_Model, text) } catch(e) { }
-                            }
-                            appSettings.poseDetectorDetectionModelPath = text
+                            videoFilePath = text
+                            setVideoPath(text)
+                            appSettings.lastVideoPath = text
                         }
                     }
 
@@ -764,695 +544,747 @@ Pane {
                         text: "Browse"
                         font.family: appStyle.fontFamily
                         font.pixelSize: appStyle.fontSizeBody
-                        onClicked: detectionModelFileDialog.open()
-                    }
-
-                    Button {
-                        text: "Clear"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        visible: detectionModelFilePathField.text !== ""
-                        onClicked: detectionModelFilePathField.text = ""
-                    }
-                }
-
-                FileDialog {
-                    id: detectionModelFileDialog
-                    title: "Select Detection Model (ONNX)"
-                    nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
-                    onAccepted: {
-                        if (!selectedFile) return
-                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
-                        if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                        detectionModelFilePathField.text = filePath
-                    }
-                }
-                                
-                TabBar {
-                    id: poseTabBar
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    TabButton { text: "Output" }
-                    TabButton { text: "Tracking" }
-                    TabButton { text: "Re-ID" }
-                    TabButton { text: "Detection" }
-                    TabButton { text: "Smoothing" }
-                }
-
-                StackLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isPoseDetector
-                    currentIndex: poseTabBar.currentIndex
-
-                    // --- Output ---
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: appStyle.spacing
-
-                        CustomLabel { text: "Output Mode"; font.bold: true }
-                        CustomComboBox {
-                            id: outputModeSelector
-                            Layout.fillWidth: true
-                            model: poseDetectorOutputModes
-                            currentIndex: 0
-                            onCurrentIndexChanged: {
-                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.output_Mode) {
-                                    try {
-                                        Score.setValue(pose_Detector.output_Mode, poseDetectorOutputModes[currentIndex])
-                                        appSettings.poseDetectorOutputMode = currentIndex
-                                    } catch(e) { }
-                                }
-                            }
-                        }
-
-                        CustomLabel { text: "Data Format"; font.bold: true }
-                        CustomComboBox {
-                            id: dataFormatSelector
-                            Layout.fillWidth: true
-                            model: poseDetectorDataFormats
-                            currentIndex: 0
-                            onCurrentIndexChanged: {
-                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.data_Format) {
-                                    try {
-                                        Score.setValue(pose_Detector.data_Format, poseDetectorDataFormats[currentIndex])
-                                        appSettings.poseDetectorDataFormat = currentIndex
-                                    } catch(e) { }
-                                }
-                            }
-                        }
-
-                        CustomLabel { text: "Skeleton"; font.bold: true }
-                        CustomComboBox {
-                            id: skeletonTypeSelector
-                            Layout.fillWidth: true
-                            model: poseDetectorSkeletonTypes
-                            currentIndex: 0
-                            onCurrentIndexChanged: {
-                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.skeleton_Type) {
-                                    try {
-                                        Score.setValue(pose_Detector.skeleton_Type, poseDetectorSkeletonTypes[currentIndex])
-                                        appSettings.poseDetectorSkeletonType = currentIndex
-                                    } catch(e) { }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CheckBox {
-                                id: drawSkeletonSwitch
-                                text: "Draw Skeleton"
-                                checked: true
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Skeleton) {
-                                        try {
-                                            Score.setValue(pose_Detector.draw_Skeleton, checked)
-                                            appSettings.poseDetectorDrawSkeleton = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                            CheckBox {
-                                id: drawLandmarksSwitch
-                                text: "Draw Landmarks"
-                                checked: true
-                                Layout.leftMargin: appStyle.spacing
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Landmarks) {
-                                        try {
-                                            Score.setValue(pose_Detector.draw_Landmarks, checked)
-                                            appSettings.poseDetectorDrawLandmarks = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                            CheckBox {
-                                id: drawBoxesSwitch
-                                text: "Draw Boxes"
-                                checked: false
-                                Layout.leftMargin: appStyle.spacing
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Boxes) {
-                                        try {
-                                            Score.setValue(pose_Detector.draw_Boxes, checked)
-                                            appSettings.poseDetectorDrawBoxes = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // --- Tracking ---
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: appStyle.spacing
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Confidence: " + minConfidenceSlider.value.toFixed(2); font.bold: true }
-                            Slider {
-                                id: minConfidenceSlider
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 80
-                                from: 0.0; to: 1.0; value: 0.3; stepSize: 0.01
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.min_Confidence) {
-                                        try {
-                                            Score.setValue(pose_Detector.min_Confidence, value)
-                                            appSettings.poseDetectorMinConfidence = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CheckBox {
-                                id: trackIDsSwitch
-                                text: "Track IDs"
-                                checked: false
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
-                                        try {
-                                            Score.setValue(pose_Detector.track_IDs, checked)
-                                            appSettings.poseDetectorTrackIDs = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                            CheckBox {
-                                id: trackROISwitch
-                                text: "Track ROI"
-                                checked: false
-                                Layout.leftMargin: appStyle.spacing
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
-                                        try {
-                                            Score.setValue(pose_Detector.track_ROI, checked)
-                                            appSettings.poseDetectorTrackROI = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Max Instances"; font.bold: true }
-                            SpinBox {
-                                id: maxInstancesSpinBox
-                                from: 1; to: 16; value: 5; editable: true
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Instances) {
-                                        try {
-                                            Score.setValue(pose_Detector.max_Instances, value)
-                                            appSettings.poseDetectorMaxInstances = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Track Memory"; font.bold: true }
-                            SpinBox {
-                                id: trackMemorySpinBox
-                                from: 1; to: 300; value: 30; editable: true
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_Memory) {
-                                        try {
-                                            Score.setValue(pose_Detector.track_Memory, value)
-                                            appSettings.poseDetectorTrackMemory = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Detection Hold"; font.bold: true }
-                            SpinBox {
-                                id: holdFramesSpinBox
-                                from: 0; to: 60; value: 6; editable: true
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.hold_Frames) {
-                                        try {
-                                            Score.setValue(pose_Detector.hold_Frames, value)
-                                            appSettings.poseDetectorHoldFrames = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Detector Cadence"; font.bold: true }
-                            SpinBox {
-                                id: detectorCadenceSpinBox
-                                from: 1; to: 30; value: 4; editable: true
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detector_Cadence) {
-                                        try {
-                                            Score.setValue(pose_Detector.detector_Cadence, value)
-                                            appSettings.poseDetectorDetectorCadence = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        CustomLabel { text: "Motion Gate"; font.bold: true }
-                        CustomComboBox {
-                            id: motionGateSelector
-                            Layout.fillWidth: true
-                            model: poseDetectorMotionGates
-                            currentIndex: 0
-                            onCurrentIndexChanged: {
-                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.motion_Gate) {
-                                    try {
-                                        Score.setValue(pose_Detector.motion_Gate, poseDetectorMotionGates[currentIndex])
-                                        appSettings.poseDetectorMotionGate = currentIndex
-                                    } catch(e) { }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Max Speed: " + maxSpeedSlider.value.toFixed(2); font.bold: true }
-                            Slider {
-                                id: maxSpeedSlider
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 80
-                                from: 0.25; to: 6.0; value: 2.0; stepSize: 0.05
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Speed) {
-                                        try {
-                                            Score.setValue(pose_Detector.max_Speed, value)
-                                            appSettings.poseDetectorMaxSpeed = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CheckBox {
-                                id: birthGateSwitch
-                                text: "Birth Gate"
-                                checked: true
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.birth_Gate) {
-                                        try {
-                                            Score.setValue(pose_Detector.birth_Gate, checked)
-                                            appSettings.poseDetectorBirthGate = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                            CheckBox {
-                                id: strictConfirmSwitch
-                                text: "Strict Confirmation"
-                                checked: false
-                                Layout.leftMargin: appStyle.spacing
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.strict_Confirm) {
-                                        try {
-                                            Score.setValue(pose_Detector.strict_Confirm, checked)
-                                            appSettings.poseDetectorStrictConfirm = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // --- Re-ID ---
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: appStyle.spacing
-
-                        CustomLabel { text: "Re-ID Model (ONNX)"; font.bold: true }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            CustomTextField {
-                                id: reidModelFilePathField
-                                Layout.fillWidth: true
-                                text: ""
-                                placeholderText: "Optional Re-ID embedding ONNX..."
-                                onTextChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Model) {
-                                        try { Score.setValue(pose_Detector.reid_Model, text) } catch(e) { }
-                                    }
-                                    appSettings.poseDetectorReidModelPath = text
-                                }
-                            }
-                            Button {
-                                text: "Browse"
-                                font.family: appStyle.fontFamily
-                                font.pixelSize: appStyle.fontSizeBody
-                                onClicked: reidModelFileDialog.open()
-                            }
-                            Button {
-                                text: "Clear"
-                                font.family: appStyle.fontFamily
-                                font.pixelSize: appStyle.fontSizeBody
-                                visible: reidModelFilePathField.text !== ""
-                                onClicked: reidModelFilePathField.text = ""
-                            }
-                        }
-                        FileDialog {
-                            id: reidModelFileDialog
-                            title: "Select Re-ID Model (ONNX)"
-                            nameFilters: ["ONNX Files (*.onnx)", "All Files (*)"]
-                            onAccepted: {
-                                if (!selectedFile) return
-                                var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
-                                if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                                reidModelFilePathField.text = filePath
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CheckBox {
-                                id: reidSwitch
-                                text: "Re-ID"
-                                checked: false
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid) {
-                                        try {
-                                            Score.setValue(pose_Detector.reid, checked)
-                                            appSettings.poseDetectorReid = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Weight: " + reidWeightSlider.value.toFixed(2); font.bold: true }
-                            Slider {
-                                id: reidWeightSlider
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 80
-                                from: 0.0; to: 1.0; value: 0.25; stepSize: 0.01
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Weight) {
-                                        try {
-                                            Score.setValue(pose_Detector.reid_Weight, value)
-                                            appSettings.poseDetectorReidWeight = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        CustomLabel { text: "Re-ID Preprocess"; font.bold: true }
-                        CustomComboBox {
-                            id: reidPreprocessSelector
-                            Layout.fillWidth: true
-                            model: poseDetectorReidPreprocess
-                            currentIndex: 0
-                            onCurrentIndexChanged: {
-                                if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Preprocess) {
-                                    try {
-                                        Score.setValue(pose_Detector.reid_Preprocess, poseDetectorReidPreprocess[currentIndex])
-                                        appSettings.poseDetectorReidPreprocess = currentIndex
-                                    } catch(e) { }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Re-ID Memory"; font.bold: true }
-                            SpinBox {
-                                id: reidMemorySpinBox
-                                from: 0; to: 18000; value: 1800; editable: true
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Memory) {
-                                        try {
-                                            Score.setValue(pose_Detector.reid_Memory, value)
-                                            appSettings.poseDetectorReidMemory = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Re-ID Margin: " + reidMarginSlider.value.toFixed(2); font.bold: true }
-                            Slider {
-                                id: reidMarginSlider
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 80
-                                from: 0.0; to: 0.5; value: 0.1; stepSize: 0.01
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Margin) {
-                                        try {
-                                            Score.setValue(pose_Detector.reid_Margin, value)
-                                            appSettings.poseDetectorReidMargin = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // --- Detection ---
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: appStyle.spacing
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Detection Class"; font.bold: true }
-                            SpinBox {
-                                id: detectionClassSpinBox
-                                from: -1; to: 90; value: -1; editable: true
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detection_Class) {
-                                        try {
-                                            Score.setValue(pose_Detector.detection_Class, value)
-                                            appSettings.poseDetectorDetectionClass = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        CustomLabel { text: "Class Names File (.txt)"; font.bold: true }
-                        RowLayout {
-                            Layout.fillWidth: true
-                            CustomTextField {
-                                id: classNamesFilePathField
-                                Layout.fillWidth: true
-                                text: ""
-                                placeholderText: "Optional class names (empty = COCO-80)..."
-                                onTextChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.class_File) {
-                                        try { Score.setValue(pose_Detector.class_File, text) } catch(e) { }
-                                    }
-                                    appSettings.poseDetectorClassNamesFile = text
-                                }
-                            }
-                            Button {
-                                text: "Browse"
-                                font.family: appStyle.fontFamily
-                                font.pixelSize: appStyle.fontSizeBody
-                                onClicked: classNamesFileDialog.open()
-                            }
-                            Button {
-                                text: "Clear"
-                                font.family: appStyle.fontFamily
-                                font.pixelSize: appStyle.fontSizeBody
-                                visible: classNamesFilePathField.text !== ""
-                                onClicked: classNamesFilePathField.text = ""
-                            }
-                        }
-                        FileDialog {
-                            id: classNamesFileDialog
-                            title: "Select Class Names File"
-                            nameFilters: ["Text Files (*.txt)", "All Files (*)"]
-                            onAccepted: {
-                                if (!selectedFile) return
-                                var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
-                                if (filePath.startsWith("file://")) filePath = filePath.substring(7)
-                                classNamesFilePathField.text = filePath
-                            }
-                        }
-                    }
-
-                    // --- Smoothing ---
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: appStyle.spacing
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CheckBox {
-                                id: smoothingSwitch
-                                text: "Smoothing"
-                                checked: true
-                                onCheckedChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing) {
-                                        try {
-                                            Score.setValue(pose_Detector.smoothing, checked)
-                                            appSettings.poseDetectorSmoothing = checked
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            spacing: appStyle.spacing
-                            CustomLabel { text: "Smoothing: " + smoothingAmountSlider.value.toFixed(2); font.bold: true }
-                            Slider {
-                                id: smoothingAmountSlider
-                                Layout.fillWidth: true
-                                Layout.minimumWidth: 80
-                                enabled: smoothingSwitch.checked
-                                from: 0.0; to: 1.0; value: 0.5; stepSize: 0.01
-                                onValueChanged: {
-                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing_Amount) {
-                                        try {
-                                            Score.setValue(pose_Detector.smoothing_Amount, value)
-                                            appSettings.poseDetectorSmoothingAmount = value
-                                        } catch(e) { }
-                                    }
-                                }
-                            }
-                        }
+                        onClicked: Util.openFileDialog("Select Video File", "Video Files (*.mp4 *.avi *.mov *.mkv *.webm);;All Files (*)", videoFilePathField.text, function(path) { if (path) videoFilePathField.text = path })
                     }
                 }
 
                 CustomLabel {
-                    text: "Classes File (.txt)"
-                    font.bold: true
-                    visible: currentProcess && currentProcess.isObjectDetector
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: currentProcess && currentProcess.isObjectDetector
-                    
-                    CustomTextField {
-                        id: classesFilePathField
-                        Layout.fillWidth: true
-                        text: ""
-                        
-                        property bool hasValidPath: text !== "" && text.indexOf(".txt") >= 0
-                        placeholderText: "Select classes file..."
-                        
-                        property var currentClassesPort: {
-                            if (!runView.currentProcess || !runView.currentProcess.isObjectDetector) return null
-                            try { if (object_Detector) return object_Detector.classes } catch(e) { }
-                            return null
-                        }
-                        
-                        onTextChanged: {
-                            showClassesFileError = false
-                            if (currentClassesPort) {
-                                try { Score.setValue(currentClassesPort, text) } catch(e) { }
-                            }
-                            appSettings.objectDetectorClassesPath = text
-                        }
-                    }
-                    
-                    Button {
-                        text: "Browse"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        onClicked: classesFileDialog.open()
-                    }
-                }
-                
-                CustomLabel {
-                    visible: showClassesFileError && currentProcess && currentProcess.isObjectDetector
-                    text: "Please select a classes file"
+                    visible: inputSource === "video" && videoFilePath === ""
+                    text: "Please select a video file"
                     color: appStyle.errorColor
                     font.pixelSize: appStyle.fontSizeSmall
                 }
-                
-                FileDialog {
-                    id: classesFileDialog
-                    title: "Select Classes File"
-                    nameFilters: ["Text Files (*.txt)", "All Files (*)"]
-                    onAccepted: {
-                        if (!selectedFile) return
-                        var filePath = new URL(selectedFile).pathname.substr(Qt.platform.os === "windows" ? 1 : 0);
-                        classesFilePathField.text = filePath
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 1
+                    color: appStyle.separatorColor
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: appStyle.spacing
+
+                    TabBar {
+                        id: poseTabBar
+                        Layout.fillWidth: true
+                        TabButton { text: "Models" }
+                        TabButton { text: "Output" }
+                        TabButton { text: "Tracking" }
+                        TabButton { text: "Re-ID" }
+                        TabButton { text: "Detection" }
+                        TabButton { text: "Smoothing" }
+                        TabButton { text: "Network" }
+                    }
+
+                    StackLayout {
+                        Layout.fillWidth: true
+                        currentIndex: poseTabBar.currentIndex
+
+                        // --- Models ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            CustomLabel {
+                                text: "Choose AI Model"
+                                font.bold: true
+                                font.pixelSize: appStyle.fontSizeSubtitle
+                            }
+
+                            CustomComboBox {
+                                id: backendSelector
+                                Layout.fillWidth: true
+                                model: [" "]
+
+                                function updateModel(currentIndex) {
+                                    restartIfRunning()
+                                    showModelError = false
+                                    if (currentProcess && currentProcess.scenarioLabel) {
+                                        if (modelFilePathField.text) modelPaths["pose_detector"] = modelFilePathField.text
+                                    }
+                                    if (currentIndex > 0) {
+                                        currentProcess = availableProcesses[currentIndex - 1];
+                                        var newLabel = currentProcess.scenarioLabel;
+                                        appSettings.lastSelectedModel = newLabel;
+                                        modelFilePathField.text = modelPaths["pose_detector"] || "";
+                                        if (pose_Detector.workflow) {
+                                            try { Score.setValue(pose_Detector.workflow, newLabel) } catch(e) { }
+                                        }
+                                    } else {
+                                        currentProcess = null;
+                                        modelFilePathField.text = "";
+                                    }
+                                }
+
+                                onCurrentIndexChanged: updateModel(currentIndex)
+                            }
+
+                            CustomLabel {
+                                visible: showModelError
+                                text: "Please select a model"
+                                color: appStyle.errorColor
+                                font.pixelSize: appStyle.fontSizeSmall
+                            }
+                            CustomLabel {
+                                text: (currentProcess && currentProcess.isPoseDetector) ? "Landmark Model (ONNX)" : "ONNX Model File"
+                                font.bold: true
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                CustomTextField { 
+                                    id: modelFilePathField
+                                    Layout.fillWidth: true
+                                    text: ""
+
+                                    property bool hasValidPath: text !== "" && text.indexOf(".onnx") >= 0
+                                    placeholderText: "Select ONNX model file..."
+
+                                    property var currentModelPort: {
+                                        if (!runView.currentProcess) return null
+                                        try { return pose_Detector.model } catch(e) { }
+                                        return null
+                                    }
+
+                                    onTextChanged: {
+                                        showModelFileError = false
+                                        if (currentModelPort) {
+                                            try { Score.setValue(currentModelPort, text) } catch(e) { }
+                                        }
+                                        appSettings.poseDetectorModelPath = text
+                                    }
+                                }
+
+                                Button {
+                                    text: "Browse"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    onClicked: Util.openFileDialog("Select ONNX Model File", "ONNX Files (*.onnx);;All Files (*)", modelFilePathField.text, function(path) { if (path) modelFilePathField.text = path })
+                                }
+                            }
+
+
+                            CustomLabel {
+                                visible: showModelFileError
+                                text: "Please select an ONNX model file"
+                                color: appStyle.errorColor
+                                font.pixelSize: appStyle.fontSizeSmall
+                            }
+
+                            CustomLabel {
+                                text: "Detection Model (optional, two-stage)"
+                                font.bold: true
+                                visible: currentProcess && currentProcess.isPoseDetector
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                visible: currentProcess && currentProcess.isPoseDetector
+
+                                CustomTextField {
+                                    id: detectionModelFilePathField
+                                    Layout.fillWidth: true
+                                    text: ""
+                                    placeholderText: "Optional stage-1 detector ONNX (empty = single-stage)..."
+
+                                    onTextChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.det_Model) {
+                                            try { Score.setValue(pose_Detector.det_Model, text) } catch(e) { }
+                                        }
+                                        appSettings.poseDetectorDetectionModelPath = text
+                                    }
+                                }
+
+                                Button {
+                                    text: "Browse"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    onClicked: Util.openFileDialog("Select Detection Model (ONNX)", "ONNX Files (*.onnx);;All Files (*)", detectionModelFilePathField.text, function(path) { if (path) detectionModelFilePathField.text = path })
+                                }
+
+                                Button {
+                                    text: "Clear"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    visible: detectionModelFilePathField.text !== ""
+                                    onClicked: detectionModelFilePathField.text = ""
+                                }
+                            }
+                        }
+
+                        // --- Output ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            CustomLabel { text: "Output Mode"; font.bold: true }
+                            CustomComboBox {
+                                id: outputModeSelector
+                                Layout.fillWidth: true
+                                model: poseDetectorOutputModes
+                                currentIndex: 0
+                                onCurrentIndexChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.output_Mode) {
+                                        try {
+                                            Score.setValue(pose_Detector.output_Mode, poseDetectorOutputModes[currentIndex])
+                                            appSettings.poseDetectorOutputMode = currentIndex
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+
+                            CustomLabel { text: "Data Format"; font.bold: true }
+                            CustomComboBox {
+                                id: dataFormatSelector
+                                Layout.fillWidth: true
+                                model: poseDetectorDataFormats
+                                currentIndex: 0
+                                onCurrentIndexChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.data_Format) {
+                                        try {
+                                            Score.setValue(pose_Detector.data_Format, poseDetectorDataFormats[currentIndex])
+                                            appSettings.poseDetectorDataFormat = currentIndex
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+
+                            CustomLabel { text: "Skeleton"; font.bold: true }
+                            CustomComboBox {
+                                id: skeletonTypeSelector
+                                Layout.fillWidth: true
+                                model: poseDetectorSkeletonTypes
+                                currentIndex: 0
+                                onCurrentIndexChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.skeleton_Type) {
+                                        try {
+                                            Score.setValue(pose_Detector.skeleton_Type, poseDetectorSkeletonTypes[currentIndex])
+                                            appSettings.poseDetectorSkeletonType = currentIndex
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CheckBox {
+                                    id: drawSkeletonSwitch
+                                    text: "Draw Skeleton"
+                                    checked: true
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Skeleton) {
+                                            try {
+                                                Score.setValue(pose_Detector.draw_Skeleton, checked)
+                                                appSettings.poseDetectorDrawSkeleton = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                                CheckBox {
+                                    id: drawLandmarksSwitch
+                                    text: "Draw Landmarks"
+                                    checked: true
+                                    Layout.leftMargin: appStyle.spacing
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Landmarks) {
+                                            try {
+                                                Score.setValue(pose_Detector.draw_Landmarks, checked)
+                                                appSettings.poseDetectorDrawLandmarks = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                                CheckBox {
+                                    id: drawBoxesSwitch
+                                    text: "Draw Boxes"
+                                    checked: false
+                                    Layout.leftMargin: appStyle.spacing
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Boxes) {
+                                            try {
+                                                Score.setValue(pose_Detector.draw_Boxes, checked)
+                                                appSettings.poseDetectorDrawBoxes = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Tracking ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Confidence: " + minConfidenceSlider.value.toFixed(2); font.bold: true }
+                                Slider {
+                                    id: minConfidenceSlider
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 80
+                                    from: 0.0; to: 1.0; value: 0.3; stepSize: 0.01
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.min_Confidence) {
+                                            try {
+                                                Score.setValue(pose_Detector.min_Confidence, value)
+                                                appSettings.poseDetectorMinConfidence = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CheckBox {
+                                    id: trackIDsSwitch
+                                    text: "Track IDs"
+                                    checked: false
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_IDs) {
+                                            try {
+                                                Score.setValue(pose_Detector.track_IDs, checked)
+                                                appSettings.poseDetectorTrackIDs = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                                CheckBox {
+                                    id: trackROISwitch
+                                    text: "Track ROI"
+                                    checked: false
+                                    Layout.leftMargin: appStyle.spacing
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
+                                            try {
+                                                Score.setValue(pose_Detector.track_ROI, checked)
+                                                appSettings.poseDetectorTrackROI = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Max Instances"; font.bold: true }
+                                SpinBox {
+                                    id: maxInstancesSpinBox
+                                    from: 1; to: 16; value: 5; editable: true
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Instances) {
+                                            try {
+                                                Score.setValue(pose_Detector.max_Instances, value)
+                                                appSettings.poseDetectorMaxInstances = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Track Memory"; font.bold: true }
+                                SpinBox {
+                                    id: trackMemorySpinBox
+                                    from: 1; to: 300; value: 30; editable: true
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_Memory) {
+                                            try {
+                                                Score.setValue(pose_Detector.track_Memory, value)
+                                                appSettings.poseDetectorTrackMemory = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Detection Hold"; font.bold: true }
+                                SpinBox {
+                                    id: holdFramesSpinBox
+                                    from: 0; to: 60; value: 6; editable: true
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.hold_Frames) {
+                                            try {
+                                                Score.setValue(pose_Detector.hold_Frames, value)
+                                                appSettings.poseDetectorHoldFrames = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Detector Cadence"; font.bold: true }
+                                SpinBox {
+                                    id: detectorCadenceSpinBox
+                                    from: 1; to: 30; value: 4; editable: true
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detector_Cadence) {
+                                            try {
+                                                Score.setValue(pose_Detector.detector_Cadence, value)
+                                                appSettings.poseDetectorDetectorCadence = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            CustomLabel { text: "Motion Gate"; font.bold: true }
+                            CustomComboBox {
+                                id: motionGateSelector
+                                Layout.fillWidth: true
+                                model: poseDetectorMotionGates
+                                currentIndex: 0
+                                onCurrentIndexChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.motion_Gate) {
+                                        try {
+                                            Score.setValue(pose_Detector.motion_Gate, poseDetectorMotionGates[currentIndex])
+                                            appSettings.poseDetectorMotionGate = currentIndex
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Max Speed: " + maxSpeedSlider.value.toFixed(2); font.bold: true }
+                                Slider {
+                                    id: maxSpeedSlider
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 80
+                                    from: 0.25; to: 6.0; value: 2.0; stepSize: 0.05
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.max_Speed) {
+                                            try {
+                                                Score.setValue(pose_Detector.max_Speed, value)
+                                                appSettings.poseDetectorMaxSpeed = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CheckBox {
+                                    id: birthGateSwitch
+                                    text: "Birth Gate"
+                                    checked: true
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.birth_Gate) {
+                                            try {
+                                                Score.setValue(pose_Detector.birth_Gate, checked)
+                                                appSettings.poseDetectorBirthGate = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                                CheckBox {
+                                    id: strictConfirmSwitch
+                                    text: "Strict Confirmation"
+                                    checked: false
+                                    Layout.leftMargin: appStyle.spacing
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.strict_Confirm) {
+                                            try {
+                                                Score.setValue(pose_Detector.strict_Confirm, checked)
+                                                appSettings.poseDetectorStrictConfirm = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Re-ID ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            CustomLabel { text: "Re-ID Model (ONNX)"; font.bold: true }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                CustomTextField {
+                                    id: reidModelFilePathField
+                                    Layout.fillWidth: true
+                                    text: ""
+                                    placeholderText: "Optional Re-ID embedding ONNX..."
+                                    onTextChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Model) {
+                                            try { Score.setValue(pose_Detector.reid_Model, text) } catch(e) { }
+                                        }
+                                        appSettings.poseDetectorReidModelPath = text
+                                    }
+                                }
+                                Button {
+                                    text: "Browse"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    onClicked: Util.openFileDialog("Select Re-ID Model (ONNX)", "ONNX Files (*.onnx);;All Files (*)", reidModelFilePathField.text, function(path) { if (path) reidModelFilePathField.text = path })
+                                }
+                                Button {
+                                    text: "Clear"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    visible: reidModelFilePathField.text !== ""
+                                    onClicked: reidModelFilePathField.text = ""
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CheckBox {
+                                    id: reidSwitch
+                                    text: "Re-ID"
+                                    checked: false
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid) {
+                                            try {
+                                                Score.setValue(pose_Detector.reid, checked)
+                                                appSettings.poseDetectorReid = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Weight: " + reidWeightSlider.value.toFixed(2); font.bold: true }
+                                Slider {
+                                    id: reidWeightSlider
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 80
+                                    from: 0.0; to: 1.0; value: 0.25; stepSize: 0.01
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Weight) {
+                                            try {
+                                                Score.setValue(pose_Detector.reid_Weight, value)
+                                                appSettings.poseDetectorReidWeight = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            CustomLabel { text: "Re-ID Preprocess"; font.bold: true }
+                            CustomComboBox {
+                                id: reidPreprocessSelector
+                                Layout.fillWidth: true
+                                model: poseDetectorReidPreprocess
+                                currentIndex: 0
+                                onCurrentIndexChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Preprocess) {
+                                        try {
+                                            Score.setValue(pose_Detector.reid_Preprocess, poseDetectorReidPreprocess[currentIndex])
+                                            appSettings.poseDetectorReidPreprocess = currentIndex
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Re-ID Memory"; font.bold: true }
+                                SpinBox {
+                                    id: reidMemorySpinBox
+                                    from: 0; to: 18000; value: 1800; editable: true
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Memory) {
+                                            try {
+                                                Score.setValue(pose_Detector.reid_Memory, value)
+                                                appSettings.poseDetectorReidMemory = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Re-ID Margin: " + reidMarginSlider.value.toFixed(2); font.bold: true }
+                                Slider {
+                                    id: reidMarginSlider
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 80
+                                    from: 0.0; to: 0.5; value: 0.1; stepSize: 0.01
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.reid_Margin) {
+                                            try {
+                                                Score.setValue(pose_Detector.reid_Margin, value)
+                                                appSettings.poseDetectorReidMargin = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Detection ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Detection Class"; font.bold: true }
+                                SpinBox {
+                                    id: detectionClassSpinBox
+                                    from: -1; to: 90; value: -1; editable: true
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.detection_Class) {
+                                            try {
+                                                Score.setValue(pose_Detector.detection_Class, value)
+                                                appSettings.poseDetectorDetectionClass = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            CustomLabel { text: "Class Names File (.txt)"; font.bold: true }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                CustomTextField {
+                                    id: classNamesFilePathField
+                                    Layout.fillWidth: true
+                                    text: ""
+                                    placeholderText: "Optional class names (empty = COCO-80)..."
+                                    onTextChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.class_File) {
+                                            try { Score.setValue(pose_Detector.class_File, text) } catch(e) { }
+                                        }
+                                        appSettings.poseDetectorClassNamesFile = text
+                                    }
+                                }
+                                Button {
+                                    text: "Browse"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    onClicked: Util.openFileDialog("Select Class Names File", "Text Files (*.txt);;All Files (*)", classNamesFilePathField.text, function(path) { if (path) classNamesFilePathField.text = path })
+                                }
+                                Button {
+                                    text: "Clear"
+                                    font.family: appStyle.fontFamily
+                                    font.pixelSize: appStyle.fontSizeBody
+                                    visible: classNamesFilePathField.text !== ""
+                                    onClicked: classNamesFilePathField.text = ""
+                                }
+                            }
+                        }
+
+                        // --- Smoothing ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CheckBox {
+                                    id: smoothingSwitch
+                                    text: "Smoothing"
+                                    checked: true
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing) {
+                                            try {
+                                                Score.setValue(pose_Detector.smoothing, checked)
+                                                appSettings.poseDetectorSmoothing = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+                                CustomLabel { text: "Smoothing: " + smoothingAmountSlider.value.toFixed(2); font.bold: true }
+                                Slider {
+                                    id: smoothingAmountSlider
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 80
+                                    enabled: smoothingSwitch.checked
+                                    from: 0.0; to: 1.0; value: 0.5; stepSize: 0.01
+                                    onValueChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.smoothing_Amount) {
+                                            try {
+                                                Score.setValue(pose_Detector.smoothing_Amount, value)
+                                                appSettings.poseDetectorSmoothingAmount = value
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // --- Network ---
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: appStyle.spacing
+
+                            CustomLabel {
+                                text: "OSC Output Settings"
+                                font.bold: true
+                                font.pixelSize: appStyle.fontSizeSubtitle
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: appStyle.spacing
+
+                                CustomTextField {
+                                    id: oscIpAddress
+                                    Layout.fillWidth: true
+                                    placeholderText: "IP (e.g. 127.0.0.1)"
+                                    text: "127.0.0.1"
+                                    enabled: !isRunning
+                                    onTextChanged: appSettings.oscIpAddress = text
+                                }
+
+                                CustomTextField {
+                                    id: oscPort
+                                    Layout.fillWidth: true
+                                    placeholderText: "Port (e.g. 9000)"
+                                    text: "9000"
+                                    enabled: !isRunning
+                                    validator: IntValidator { bottom: 1; top: 65535 }
+                                    onTextChanged: appSettings.oscPortValue = text
+                                }
+                            }
+                        }
                     }
                 }
-            }
 
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: appStyle.separatorColor
             }
+        }
 
-            CustomLabel {
-                text: "OSC Output Settings"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: appStyle.spacing
-                
-                CustomTextField {
-                    id: oscIpAddress
-                    Layout.fillWidth: true
-                    placeholderText: "IP (e.g. 127.0.0.1)"
-                    text: "127.0.0.1"
-                    enabled: !isRunning
-                    onTextChanged: appSettings.oscIpAddress = text
-                }
-
-                CustomTextField {
-                    id: oscPort
-                    Layout.fillWidth: true
-                    placeholderText: "Port (e.g. 9000)"
-                    text: "9000"
-                    enabled: !isRunning
-                    validator: IntValidator { bottom: 1; top: 65535 }
-                    onTextChanged: appSettings.oscPortValue = text
-                }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                height: 1
-                color: appStyle.separatorColor
-            }
+        ColumnLayout {
+            id: previewPanel
+            SplitView.preferredWidth: 480
+            SplitView.minimumWidth: 320
+            spacing: appStyle.spacing
 
             CustomLabel {
                 text: "Video Preview"
@@ -1470,7 +1302,7 @@ Pane {
                 radius: appStyle.borderRadius
                 border.color: appStyle.borderColor
                 border.width: 1
-                
+
                 readonly property real aspectRatio: 16 / 9
                 Rectangle {
                     id: videoPreviewClip
@@ -1481,12 +1313,12 @@ Pane {
                     clip: true
                     layer.enabled: true
                     layer.smooth: true
-                    
+
                     UI.TextureSource {
                         id: textureSource
                         width: 1280
                         height: 720
-                        process: currentProcess ? currentProcess.videoMapperLabel : "" 
+                        process: isRunning ? "livepose preview" : ""
                         port: 0
                         visible: isRunning
                     }
@@ -1516,11 +1348,8 @@ Pane {
                 }
             }
 
-
-
             RowLayout {
                 Layout.fillWidth: true
-                Layout.bottomMargin: appStyle.padding
 
                 Button {
                     id: startStopButton
@@ -1539,6 +1368,8 @@ Pane {
                 }
 
                 CustomLabel {
+                    Layout.fillWidth: true
+                    wrapMode: Text.WordWrap
                     text: {
                         if (!currentProcess) return "Please select a model"
                         if (!modelFilePathField.hasValidPath) return "Please select an ONNX model file"
@@ -1548,6 +1379,8 @@ Pane {
                     }
                 }
             }
+
+            Item { Layout.fillHeight: true }
         }
     }
 }
