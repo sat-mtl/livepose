@@ -7,5 +7,7 @@ CustomLabel 1.0 Components/CustomLabel.qml
 CustomSwitch 1.0 Components/CustomSwitch.qml
 CustomTextField 1.0 Components/CustomTextField.qml
 AboutDialog 1.0 Components/AboutDialog.qml
+PreviewPanel 1.0 Components/PreviewPanel.qml
 RunView 1.0 Views/RunView.qml
+PresetView 1.0 Views/PresetView.qml
 LogView 1.0 Views/LogView.qml

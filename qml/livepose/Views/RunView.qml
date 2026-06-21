@@ -2,7 +2,6 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtCore
-import Score.UI as UI
 import livepose
 
 Pane {
@@ -32,7 +31,32 @@ Pane {
     property var modelPaths: ({})
     property string inputSource: "camera"
     property string videoFilePath: ""
-    
+
+    // Pure (side-effect-free) readiness/status, consumed by PreviewPanel so the
+    // RUN and PRESETS previews share one source of truth.
+    readonly property bool inputReady:
+        (inputSource === "camera" && cameraSelector.currentIndex > 0)
+        || (inputSource === "video" && videoFilePath !== "")
+    readonly property bool modelReady: {
+        if (!currentProcess) return false
+        return modelFilePathField.hasValidPath
+            || detectionModelFilePathField.text.indexOf(".onnx") >= 0
+    }
+    readonly property bool canStart: inputReady && modelReady
+    readonly property string statusText: {
+        if (!currentProcess) return "Please select a model"
+        if (!modelReady) return "Please select a Landmark or Detection model"
+        if (!inputReady) return (inputSource === "camera")
+            ? "Please select a camera" : "Please select a video file"
+        if (isRunning) return (isPaused ? "Paused: " : "Running: ") + currentProcess.scenarioLabel
+        return "Ready: " + currentProcess.scenarioLabel
+    }
+
+    function togglePause() {
+        if (isPaused) { Score.resume(); isPaused = false }
+        else { Score.pause(); isPaused = true }
+    }
+
     property var poseDetectorWorkflows: [
         "Auto",
         "BlazePose",
@@ -110,6 +134,104 @@ Pane {
         try {
             if (video_in.process_object) video_in.process_object.path = path
         } catch(e) { }
+    }
+
+    // Resolve a preset model path against the pack it came from. Presets
+    // reference models with the macro "<LIBRARY>:packages/<pack>/<sub>/<model>.onnx";
+    // on disk that pack lives at packDir, so we drop the
+    // "<LIBRARY>:packages/<pack>/" prefix and hang the rest off packDir. This is
+    // pack-name agnostic, so any installed model pack resolves.
+    function resolvePresetPath(p, packDir) {
+        if (!p) return ""
+        var marker = "<LIBRARY>:packages/"
+        if (p.indexOf(marker) === 0) {
+            var rest = p.substring(marker.length)      // "<pack>/<sub>/<model>.onnx"
+            var slash = rest.indexOf("/")
+            return packDir + "/" + (slash >= 0 ? rest.substring(slash + 1) : rest)
+        }
+        if (p.indexOf("<LIBRARY>:") === 0)
+            return packDir + "/" + p.substring("<LIBRARY>:".length)
+        return p
+    }
+
+    // Apply a preset (the .scp "Preset" array, read from the pack by PresetView)
+    // by driving the existing UI widgets. Each widget's handler already pushes to
+    // the score process and persists to appSettings, so this is the single source
+    // of truth and works whether or not the pipeline is currently running.
+    // Score.loadPreset would set the C++ ports but leave these fields stale, so we
+    // do NOT use it. packDir is the on-disk pack the preset's models resolve against.
+    function applyPreset(values, packDir) {
+        if (!values) return
+
+        // Flatten [[id, {Type: value}], ...] into id -> raw value.
+        var v = ({})
+        for (var i = 0; i < values.length; i++) {
+            var id = values[i][0]
+            var wrap = values[i][1]
+            for (var k in wrap) { v[id] = wrap[k]; break }
+        }
+        function has(id) { return v[id] !== undefined }
+
+        function setCombo(sel, model, val) {
+            // Enum controls are stored either as an integer index (workflow,
+            // motion gate, skeleton type) or as the string label (output mode,
+            // data format, re-id preprocess). Handle both.
+            var idx = (typeof val === "number") ? val : model.indexOf(val)
+            if (idx >= 0 && idx < model.length) sel.currentIndex = idx
+        }
+
+        // Workflow first: it drives backendSelector, whose handler resets the
+        // model path field — so the model paths below must be applied afterwards.
+        if (has(2)) {
+            var w = (typeof v[2] === "number") ? v[2] : poseDetectorWorkflows.indexOf(v[2])
+            if (w >= 0 && w < poseDetectorWorkflows.length) backendSelector.currentIndex = w + 1
+        }
+
+        // Model file ports (rewrite <LIBRARY> -> models folder).
+        if (has(1)) modelFilePathField.text = resolvePresetPath(String(v[1]), packDir)
+        if (has(7)) detectionModelFilePathField.text = resolvePresetPath(String(v[7]), packDir)
+        if (has(14)) reidModelFilePathField.text = resolvePresetPath(String(v[14]), packDir)
+        if (has(26)) classNamesFilePathField.text = resolvePresetPath(String(v[26]), packDir)
+
+        // Enum combo boxes.
+        if (has(3)) setCombo(outputModeSelector, poseDetectorOutputModes, v[3])
+        if (has(6)) setCombo(dataFormatSelector, poseDetectorDataFormats, v[6])
+        if (has(17)) setCombo(reidPreprocessSelector, poseDetectorReidPreprocess, v[17])
+        if (has(21)) setCombo(motionGateSelector, poseDetectorMotionGates, v[21])
+        if (has(25)) setCombo(skeletonTypeSelector, poseDetectorSkeletonTypes, v[25])
+
+        // Float sliders.
+        if (has(4)) minConfidenceSlider.value = v[4]
+        if (has(10)) smoothingAmountSlider.value = v[10]
+        if (has(16)) reidWeightSlider.value = v[16]
+        if (has(22)) maxSpeedSlider.value = v[22]
+        if (has(29)) reidMarginSlider.value = v[29]
+
+        // Int spin boxes.
+        if (has(12)) maxInstancesSpinBox.value = v[12]
+        if (has(13)) detectorCadenceSpinBox.value = v[13]
+        if (has(19)) detectionClassSpinBox.value = v[19]
+        if (has(27)) trackMemorySpinBox.value = v[27]
+        if (has(28)) reidMemorySpinBox.value = v[28]
+        if (has(30)) holdFramesSpinBox.value = v[30]
+
+        // Bool check boxes.
+        if (has(5)) drawSkeletonSwitch.checked = v[5]
+        if (has(8)) trackROISwitch.checked = v[8]
+        if (has(9)) smoothingSwitch.checked = v[9]
+        if (has(11)) trackIDsSwitch.checked = v[11]
+        if (has(15)) reidSwitch.checked = v[15]
+        if (has(18)) drawBoxesSwitch.checked = v[18]
+        if (has(20)) drawLandmarksSwitch.checked = v[20]
+        if (has(23)) birthGateSwitch.checked = v[23]
+        if (has(24)) strictConfirmSwitch.checked = v[24]
+
+        // If a pipeline is already running, restart it so the new models load
+        // and the live preview reflects the preset immediately. (A workflow
+        // change above already triggers one restart; this covers model-only
+        // changes, and restartIfRunning is a no-op once stopped, so we restart
+        // exactly once.)
+        if (isRunning) restartIfRunning()
     }
 
     Item {
@@ -209,17 +331,13 @@ Pane {
             showModelError = true
             return false
         }
-        // BoxDetection runs the Detection Model only (no landmark stage), so it
-        // requires a Detection Model rather than the Landmark Model.
-        var isBoxDetection = currentProcess.isPoseDetector && currentProcess.scenarioLabel === "BoxDetection"
-        if (isBoxDetection) {
-            if (detectionModelFilePathField.text.indexOf(".onnx") < 0) {
-                logger.log("Cannot start: BoxDetection needs a Detection Model (.onnx)")
-                showModelFileError = true
-                return false
-            }
-        } else if (!modelFilePathField.hasValidPath) {
-            logger.log("Cannot start: No ONNX model file selected")
+        // A Landmark model drives single/two-stage pose; a Detection model alone
+        // drives box detection. Either one is enough — Auto picks the pipeline,
+        // and several box presets ship with only a Detection model set.
+        var hasLandmark = modelFilePathField.hasValidPath
+        var hasDetection = detectionModelFilePathField.text.indexOf(".onnx") >= 0
+        if (!hasLandmark && !hasDetection) {
+            logger.log("Cannot start: select a Landmark or Detection model (.onnx)")
             showModelFileError = true
             return false
         }
@@ -1288,122 +1406,13 @@ Pane {
             SplitView.preferredWidth: 480
             SplitView.minimumWidth: 320
 
-            ColumnLayout {
+            PreviewPanel {
                 anchors.fill: parent
                 anchors.margins: appStyle.padding
-                spacing: appStyle.spacing
-
-                CustomLabel {
-                    text: "Video Preview"
-                    font.bold: true
-                    font.pixelSize: appStyle.fontSizeSubtitle
-                }
-
-                Rectangle {
-                    id: videoPreviewFrame
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: width / aspectRatio
-                    Layout.minimumWidth: 360
-                    Layout.minimumHeight: 200
-                    color: "transparent"
-                    radius: appStyle.borderRadius
-                    border.color: appStyle.borderColor
-                    border.width: 1
-
-                    readonly property real aspectRatio: 16 / 9
-                    Rectangle {
-                        id: videoPreviewClip
-                        anchors.fill: parent
-                        anchors.margins: 1
-                        radius: appStyle.borderRadius - 1
-                        color: appStyle.backgroundColorTertiary
-                        clip: true
-                        layer.enabled: true
-                        layer.smooth: true
-
-                        UI.TextureSource {
-                            id: textureSource
-                            width: 1280
-                            height: 720
-                            process: isRunning ? "livepose preview" : ""
-                            port: 0
-                            visible: isRunning
-                        }
-                        ShaderEffectSource {
-                            anchors.fill: parent
-                            sourceItem: textureSource
-                            hideSource: true
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            text: {
-                                if (!currentProcess) {
-                                    return "Please select a model"
-                                } else if (!modelFilePathField.hasValidPath) {
-                                    return "Please select an ONNX model file"
-                                } else if (cameraSelector.currentIndex <= 0) {
-                                    return "Please select a camera"
-                                } else {
-                                    return "Ready to start: " + currentProcess.scenarioLabel
-                                }
-                            }
-                            color: appStyle.textColorSecondary
-                            font.family: appStyle.fontFamily
-                            font.pixelSize: appStyle.fontSizeBody
-                            visible: !isRunning
-                        }
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-
-                    Button {
-                        id: startStopButton
-                        text: isRunning ? "Stop" : "Start"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        onClicked: {
-                            if (isRunning) {
-                                stopCurrentProcess()
-                            } else {
-                                if (validateBeforeStart()) {
-                                    startTriggeredScenario()
-                                }
-                            }
-                        }
-                    }
-
-                    Button {
-                        text: isPaused ? "Resume" : "Pause"
-                        visible: isRunning
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        onClicked: {
-                            if (isPaused) {
-                                Score.resume()
-                                isPaused = false
-                            } else {
-                                Score.pause()
-                                isPaused = true
-                            }
-                        }
-                    }
-
-                    CustomLabel {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        text: {
-                            if (!currentProcess) return "Please select a model"
-                            if (!modelFilePathField.hasValidPath) return "Please select an ONNX model file"
-                            if (cameraSelector.currentIndex <= 0) return "Please select a camera"
-                            if (isRunning) return (isPaused ? "Paused: " : "Running: ") + currentProcess.scenarioLabel
-                            return "Ready: " + currentProcess.scenarioLabel
-                        }
-                    }
-                }
-
-                Item { Layout.fillHeight: true }
+                target: runView
+                // Owns the preview on every view except PRESETS (which has its
+                // own); this keeps inference/OSC alive on the RUN and LOGS views.
+                active: mainWindow.currentViewIndex !== mainWindow.presetsViewIndex
             }
         }
     }

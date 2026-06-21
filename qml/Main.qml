@@ -23,6 +23,10 @@ ApplicationWindow {
 
         property string poseDetectorModelPath: ""
 
+        // Folder the preset model paths (<LIBRARY>:packages/pose-detector/…) are
+        // rewritten to. Empty = use PresetView's computed default.
+        property string poseDetectorModelsFolder: ""
+
         property string oscIpAddress: "127.0.0.1"
         property string oscPortValue: "9000"
         property string lastVideoPath: ""
@@ -119,7 +123,8 @@ ApplicationWindow {
     
     property int currentViewIndex: 0
     readonly property int runViewIndex: 0
-    readonly property int logViewIndex: 1
+    readonly property int presetsViewIndex: 1
+    readonly property int logViewIndex: 2
 
     AboutDialog {
         id: aboutDialog
@@ -170,7 +175,16 @@ ApplicationWindow {
                     isActive: currentViewIndex === runViewIndex
                     onClicked: currentViewIndex = runViewIndex
                 }
-                
+
+                CustomButton {
+                    id: presetsButton
+                    text: "PRESETS"
+                    Layout.fillWidth: true
+                    Layout.topMargin: appStyle.spacing
+                    isActive: currentViewIndex === presetsViewIndex
+                    onClicked: currentViewIndex = presetsViewIndex
+                }
+
                 CustomButton {
                     id: logButton
                     text: "LOGS"
@@ -192,7 +206,8 @@ ApplicationWindow {
             Layout.fillHeight: true
             currentIndex: currentViewIndex
             
-            RunView { }
+            RunView { id: runViewItem }
+            PresetView { runView: runViewItem }
             LogView { }
         }
     }
