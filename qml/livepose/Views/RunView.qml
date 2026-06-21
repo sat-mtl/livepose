@@ -22,6 +22,7 @@ Pane {
 
     property bool isStarting: false
     property bool isRunning: false
+    property bool isPaused: false
     property bool oscReady: false
     property bool pendingRestart: false
     
@@ -261,7 +262,7 @@ Pane {
             var vid = Score.createProcess(Score.rootInterval(), "Video", "")
             video_in.process_object = vid
             if (vid) {
-                try { vid.path = videoFilePath } catch(e) {}
+                try { vid.path = videoFilePath; vid.scaleMode = 1 } catch(e) {}
                 var vidOut = Score.outlet(vid, 0)
                 if (vidOut && inPort) Score.createCable(vidOut, inPort)
             }
@@ -296,6 +297,7 @@ Pane {
         Score.endMacro();
         Score.play();
         isRunning = true;
+        isPaused = false;
         isStarting = false;
         var inputDesc = inputSource === "camera" ? cameraPrettyNamesList[cameraSelector.currentIndex - 1] : videoFilePath
         logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + host + ":" + outPort);
@@ -317,6 +319,7 @@ Pane {
         isRunning = false;
         isStarting = false;
         oscReady = false;
+        isPaused = false;
         logger.log("Stopped: " + modelName);
         
         if (pendingRestart) {
@@ -440,7 +443,7 @@ Pane {
         anchors.fill: parent
         orientation: Qt.Horizontal
         handle: Rectangle {
-            implicitWidth: 6
+            implicitWidth: 3
             color: SplitHandle.pressed ? appStyle.primaryColor
                  : SplitHandle.hovered ? appStyle.borderColor : appStyle.separatorColor
         }
@@ -1280,107 +1283,128 @@ Pane {
             }
         }
 
-        ColumnLayout {
+        Item {
             id: previewPanel
             SplitView.preferredWidth: 480
             SplitView.minimumWidth: 320
-            spacing: appStyle.spacing
 
-            CustomLabel {
-                text: "Video Preview"
-                font.bold: true
-                font.pixelSize: appStyle.fontSizeSubtitle
-            }
-
-            Rectangle {
-                id: videoPreviewFrame
-                Layout.fillWidth: true
-                Layout.preferredHeight: width / aspectRatio
-                Layout.minimumWidth: 360
-                Layout.minimumHeight: 200
-                color: "transparent"
-                radius: appStyle.borderRadius
-                border.color: appStyle.borderColor
-                border.width: 1
-
-                readonly property real aspectRatio: 16 / 9
-                Rectangle {
-                    id: videoPreviewClip
-                    anchors.fill: parent
-                    anchors.margins: 1
-                    radius: appStyle.borderRadius - 1
-                    color: appStyle.backgroundColorTertiary
-                    clip: true
-                    layer.enabled: true
-                    layer.smooth: true
-
-                    UI.TextureSource {
-                        id: textureSource
-                        width: 1280
-                        height: 720
-                        process: isRunning ? "livepose preview" : ""
-                        port: 0
-                        visible: isRunning
-                    }
-                    ShaderEffectSource {
-                        anchors.fill: parent
-                        sourceItem: textureSource
-                        hideSource: true
-                    }
-                    Text {
-                        anchors.centerIn: parent
-                        text: {
-                            if (!currentProcess) {
-                                return "Please select a model"
-                            } else if (!modelFilePathField.hasValidPath) {
-                                return "Please select an ONNX model file"
-                            } else if (cameraSelector.currentIndex <= 0) {
-                                return "Please select a camera"
-                            } else {
-                                return "Ready to start: " + currentProcess.scenarioLabel
-                            }
-                        }
-                        color: appStyle.textColorSecondary
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        visible: !isRunning
-                    }
-                }
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-
-                Button {
-                    id: startStopButton
-                    text: isRunning ? "Stop" : "Start"
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
-                    onClicked: {
-                        if (isRunning) {
-                            stopCurrentProcess()
-                        } else {
-                            if (validateBeforeStart()) {
-                                startTriggeredScenario()
-                            }
-                        }
-                    }
-                }
+            ColumnLayout {
+                anchors.fill: parent
+                anchors.margins: appStyle.padding
+                spacing: appStyle.spacing
 
                 CustomLabel {
+                    text: "Video Preview"
+                    font.bold: true
+                    font.pixelSize: appStyle.fontSizeSubtitle
+                }
+
+                Rectangle {
+                    id: videoPreviewFrame
                     Layout.fillWidth: true
-                    wrapMode: Text.WordWrap
-                    text: {
-                        if (!currentProcess) return "Please select a model"
-                        if (!modelFilePathField.hasValidPath) return "Please select an ONNX model file"
-                        if (cameraSelector.currentIndex <= 0) return "Please select a camera"
-                        if (isRunning) return "Running: " + currentProcess.scenarioLabel
-                        return "Ready: " + currentProcess.scenarioLabel
+                    Layout.preferredHeight: width / aspectRatio
+                    Layout.minimumWidth: 360
+                    Layout.minimumHeight: 200
+                    color: "transparent"
+                    radius: appStyle.borderRadius
+                    border.color: appStyle.borderColor
+                    border.width: 1
+
+                    readonly property real aspectRatio: 16 / 9
+                    Rectangle {
+                        id: videoPreviewClip
+                        anchors.fill: parent
+                        anchors.margins: 1
+                        radius: appStyle.borderRadius - 1
+                        color: appStyle.backgroundColorTertiary
+                        clip: true
+                        layer.enabled: true
+                        layer.smooth: true
+
+                        UI.TextureSource {
+                            id: textureSource
+                            width: 1280
+                            height: 720
+                            process: isRunning ? "livepose preview" : ""
+                            port: 0
+                            visible: isRunning
+                        }
+                        ShaderEffectSource {
+                            anchors.fill: parent
+                            sourceItem: textureSource
+                            hideSource: true
+                        }
+                        Text {
+                            anchors.centerIn: parent
+                            text: {
+                                if (!currentProcess) {
+                                    return "Please select a model"
+                                } else if (!modelFilePathField.hasValidPath) {
+                                    return "Please select an ONNX model file"
+                                } else if (cameraSelector.currentIndex <= 0) {
+                                    return "Please select a camera"
+                                } else {
+                                    return "Ready to start: " + currentProcess.scenarioLabel
+                                }
+                            }
+                            color: appStyle.textColorSecondary
+                            font.family: appStyle.fontFamily
+                            font.pixelSize: appStyle.fontSizeBody
+                            visible: !isRunning
+                        }
                     }
                 }
-            }
 
-            Item { Layout.fillHeight: true }
+                RowLayout {
+                    Layout.fillWidth: true
+
+                    Button {
+                        id: startStopButton
+                        text: isRunning ? "Stop" : "Start"
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        onClicked: {
+                            if (isRunning) {
+                                stopCurrentProcess()
+                            } else {
+                                if (validateBeforeStart()) {
+                                    startTriggeredScenario()
+                                }
+                            }
+                        }
+                    }
+
+                    Button {
+                        text: isPaused ? "Resume" : "Pause"
+                        visible: isRunning
+                        font.family: appStyle.fontFamily
+                        font.pixelSize: appStyle.fontSizeBody
+                        onClicked: {
+                            if (isPaused) {
+                                Score.resume()
+                                isPaused = false
+                            } else {
+                                Score.pause()
+                                isPaused = true
+                            }
+                        }
+                    }
+
+                    CustomLabel {
+                        Layout.fillWidth: true
+                        wrapMode: Text.WordWrap
+                        text: {
+                            if (!currentProcess) return "Please select a model"
+                            if (!modelFilePathField.hasValidPath) return "Please select an ONNX model file"
+                            if (cameraSelector.currentIndex <= 0) return "Please select a camera"
+                            if (isRunning) return (isPaused ? "Paused: " : "Running: ") + currentProcess.scenarioLabel
+                            return "Ready: " + currentProcess.scenarioLabel
+                        }
+                    }
+                }
+
+                Item { Layout.fillHeight: true }
+            }
         }
     }
 }
