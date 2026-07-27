@@ -19,16 +19,28 @@ jobs:
           - os: ubuntu-latest
             platform: linux-x86_64
             artifact-name: linux-x86_64
+          - os: ubuntu-24.04-arm
+            platform: linux-aarch64
+            artifact-name: linux-aarch64
           - os: macos-latest
             platform: macos-arm
             artifact-name: macos-arm
+          - os: macos-latest
+            platform: macos-intel
+            artifact-name: macos-intel
+            target-arch: x86_64
           - os: windows-latest
             platform: windows
             artifact-name: windows
+          - os: ubuntu-24.04
+            platform: wasm
+            artifact-name: wasm
+            target-platform: wasm
+            artifact-path: packages/*.zip
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # Build ossia score from master: its ci/common.deps.sh clones
       # score-addon-onnx (the pose detector landed on the addon's default
@@ -50,6 +62,7 @@ jobs:
             -DSCORE_QT_PLUGINS_NO_QTQUICK3D=1
             -DSCORE_QT_PLUGINS_NO_IMAGEFORMATS=1
           target-arch: ${{ matrix.target-arch || '' }}
+          target-platform: ${{ matrix.target-platform || '' }}
           macos-certificate-base64: ${{ secrets.MAC_CERT_B64 }}
           macos-certificate-password: ${{ secrets.MAC_CERT_PASSWORD }}
           macos-notarize-team-id: ${{ secrets.MAC_NOTARIZE_TEAM_ID }}
@@ -89,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: livepose-${{ matrix.artifact-name }}
-          path: packages/
+          path: ${{ matrix.artifact-path || 'packages/' }}
           retention-days: 30
 
   release:
