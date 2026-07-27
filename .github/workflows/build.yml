@@ -32,11 +32,6 @@ jobs:
           - os: windows-latest
             platform: windows
             artifact-name: windows
-          - os: ubuntu-24.04
-            platform: wasm
-            artifact-name: wasm
-            target-platform: wasm
-            artifact-path: packages/*.zip
 
     steps:
       - name: Checkout repository
