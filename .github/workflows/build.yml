@@ -32,6 +32,9 @@ jobs:
           - os: windows-latest
             platform: windows
             artifact-name: windows
+          - os: windows-11-arm
+            platform: windows-arm64
+            artifact-name: windows-arm64
 
     steps:
       - name: Checkout repository
