@@ -24,10 +24,12 @@ Pane {
     property string currentBackend: ""        // "Camera" | "Video file" | "NDI" | "Spout" | "Syphon"
     property bool deviceBackend: true          // false => the file lane (Video file)
     property string currentSourceName: ""
-    property var sourceSnapshot: ({})          // source name -> enumerated DeviceSettings (sync backends)
-    property var discoveredSources: []         // source names offered to the selector
+    property var sourceSnapshot: ({})          // source label -> enumerated DeviceSettings
+    property var sourceLabels: ({})            // enumerator name -> source label
+    property var discoveredSources: []         // source labels offered to the selector
     property string videoFilePath: ""
     property string inputStatusText: ""
+    property string pendingSourceRestore: ""   // saved source not discovered yet
 
     property var availableProcesses: []
     property var currentProcess: null
@@ -222,16 +224,43 @@ Pane {
         }
     }
 
+    // Cameras enumerate one category per device and one name per mode, so both
+    // are needed to tell "1920x1080@30" on one webcam from the same mode on
+    // another. deviceRemoved carries only the name, hence sourceLabels.
+    function _sourceLabel(category, name) {
+        return (currentBackend === "Camera") ? (category + ": " + name) : name
+    }
+
+    function selectSource(name) {
+        currentSourceName = name
+        inputSelector.currentSource = name
+        recreateInputDevice(name)
+    }
+
     function onDeviceAdded(factory, category, name, settings) {
-        if (discoveredSources.indexOf(name) === -1) {
-            var arr = discoveredSources.slice()
-            arr.push(name)
-            discoveredSources = arr
+        var label = _sourceLabel(category, name)
+        if (discoveredSources.indexOf(label) !== -1)
+            return
+        sourceLabels[name] = label
+        sourceSnapshot[label] = settings
+        var arr = discoveredSources.slice()
+        arr.push(label)
+        discoveredSources = arr
+        inputStatusText = ""
+
+        if (pendingSourceRestore === label && currentSourceName === "") {
+            pendingSourceRestore = ""
+            // Not from inside the enumeration callback: creating a device there
+            // re-enters the device list while score is still walking it.
+            Qt.callLater(function() { selectSource(label) })
         }
     }
 
     function onDeviceRemoved(factory, name) {
-        var idx = discoveredSources.indexOf(name)
+        var label = sourceLabels[name] || name
+        delete sourceLabels[name]
+        delete sourceSnapshot[label]
+        var idx = discoveredSources.indexOf(label)
         if (idx !== -1) {
             var arr = discoveredSources.slice()
             arr.splice(idx, 1)
@@ -239,34 +268,30 @@ Pane {
         }
     }
 
-    // (Re)enumerate the sources for a device backend. Sync backends
-    // (Camera/Syphon) snapshot the full DeviceSettings to recreate verbatim;
-    // async backends (NDI/Spout) listen for deviceAdded/Removed (names only).
+    // (Re)enumerate the sources for a device backend. Discovery is always
+    // signal-driven, whatever the descriptor's `enumerate` says: inline
+    // backends (V4L2, AVFoundation) emit deviceAdded during the assignment
+    // below, the rest emit theirs later -- a wasm camera only once the
+    // getUserMedia prompt has been answered. `enumerate` still selects the
+    // settings shape in _createInputDeviceInMacro, which is a separate axis.
     function reenumerate(backend) {
         _clearEnumerator()
         discoveredSources = []
         sourceSnapshot = ({})
+        sourceLabels = ({})
+        pendingSourceRestore = ""
         inputStatusText = ""
         var desc = backendDescriptor(backend)
         if (!desc || desc.kind !== "device") return
         try {
             deviceEnumerator = Score.enumerateDevices(desc.uuid)
-            if (desc.enumerate === "async") {
-                deviceEnumerator.deviceAdded.connect(onDeviceAdded)
-                deviceEnumerator.deviceRemoved.connect(onDeviceRemoved)
-                deviceEnumerator.enumerate = true
-                inputStatusText = qsTr("No %1 source found yet — type a source name if needed").arg(backend)
-            } else {
-                deviceEnumerator.enumerate = true
-                var names = []
-                var snap = ({})
-                for (let dev of deviceEnumerator.devices) {
-                    var label = (backend === "Camera") ? (dev.category + ": " + dev.name) : dev.name
-                    names.push(label)
-                    snap[label] = dev.settings
-                }
-                sourceSnapshot = snap
-                discoveredSources = names
+            deviceEnumerator.deviceAdded.connect(onDeviceAdded)
+            deviceEnumerator.deviceRemoved.connect(onDeviceRemoved)
+            deviceEnumerator.enumerate = true
+            if (discoveredSources.length === 0) {
+                inputStatusText = desc.typable
+                    ? qsTr("No %1 source found yet — type a source name if needed").arg(backend)
+                    : qsTr("Looking for %1 sources…").arg(backend)
             }
         } catch (error) {
             inputStatusText = qsTr("%1 unavailable in this build").arg(backend)
@@ -442,15 +467,15 @@ Pane {
             }
         }
 
-        // Restore the last input source for a sync device backend (Camera/Syphon):
-        // if it is still present we reconnect the "Input" device, as the camera
-        // path used to do on launch. Async backends discover sources later, so
-        // they are reconnected when the user (re)selects them.
-        if (appSettings.lastSourceName !== "" && deviceBackend &&
-            discoveredSources.indexOf(appSettings.lastSourceName) !== -1) {
-            currentSourceName = appSettings.lastSourceName
-            inputSelector.currentSource = appSettings.lastSourceName
-            recreateInputDevice(appSettings.lastSourceName)
+        // Reconnect the "Input" device to the last source, as the camera path
+        // used to do on launch. Sources that enumerated inline are already
+        // here; the rest arrive later (a wasm camera only after the permission
+        // prompt), so the restore waits for them in onDeviceAdded.
+        if (appSettings.lastSourceName !== "" && deviceBackend) {
+            if (discoveredSources.indexOf(appSettings.lastSourceName) !== -1)
+                selectSource(appSettings.lastSourceName)
+            else
+                pendingSourceRestore = appSettings.lastSourceName
         }
     }
 
