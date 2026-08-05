@@ -12,24 +12,29 @@ jobs:
   build:
     name: Package Custom App - ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: [self-hosted, linux, x64, sat-builder]
+            container: "ubuntu:noble"
             platform: linux-x86_64
             artifact-name: linux-x86_64
           - os: ubuntu-24.04-arm
             platform: linux-aarch64
             artifact-name: linux-aarch64
           - os: macos-latest
+            container: ""
             platform: macos-arm
             artifact-name: macos-arm
           - os: macos-latest
+            container: ""
             platform: macos-intel
             artifact-name: macos-intel
             target-arch: x86_64
           - os: windows-latest
+            container: ""
             platform: windows
             artifact-name: windows
           - os: windows-11-arm
@@ -106,7 +111,8 @@ jobs:
   release:
     name: Create Release
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, sat-builder]
+    container: ubuntu:noble
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
 
     steps:
