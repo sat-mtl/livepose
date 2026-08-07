@@ -2,20 +2,30 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtCore
+import ca.qc.sat.qmlcomponents
 import livepose
 
 Pane {
     id: runView
     background: Rectangle {
-        color: appStyle.backgroundColor
+        color: Theme.backgroundColor
     }
 
 
     property var logger: mainWindow.logger
 
-    property var deviceEnumerator
-    property var cameraList: []
-    property var cameraPrettyNamesList: []
+    // InputSourceSelector is pure presentation, so this view owns the whole
+    // Score side: enumeration, the "Input" device lifecycle and the routing.
+    property var deviceEnumerator: null
+    property string currentBackend: ""       // "Camera" | "Video file" | "NDI" | "Spout" | "Syphon"
+    property bool deviceBackend: true        // false => the video-file lane
+    property string currentSourceName: ""
+    property var sourceLabels: ({})          // enumerator name -> source label
+    property var discoveredSources: []       // source labels offered to the selector
+    property string inputStatusText: ""
+    property string pendingSourceRestore: "" // saved source not discovered yet
+    // Muzzles the selector's change signals while restoreSavedSettings() writes to it.
+    property bool restoringInput: false
     property var availableProcesses: []
     property var currentProcess: null
 
@@ -26,17 +36,16 @@ Pane {
     property bool pendingRestart: false
     
     property bool showModelError: false
-    property bool showCameraError: false
+    property bool showInputError: false
     property bool showModelFileError: false
     property var modelPaths: ({})
-    property string inputSource: "camera"
+
     property string videoFilePath: ""
 
     // Pure (side-effect-free) readiness/status, consumed by PreviewPanel so the
     // RUN and PRESETS previews share one source of truth.
     readonly property bool inputReady:
-        (inputSource === "camera" && cameraSelector.currentIndex > 0)
-        || (inputSource === "video" && videoFilePath !== "")
+        deviceBackend ? (currentSourceName !== "") : (videoFilePath !== "")
     readonly property bool modelReady: {
         if (!currentProcess) return false
         return modelFilePathField.hasValidPath
@@ -46,8 +55,8 @@ Pane {
     readonly property string statusText: {
         if (!currentProcess) return "Please select a model"
         if (!modelReady) return "Please select a Landmark or Detection model"
-        if (!inputReady) return (inputSource === "camera")
-            ? "Please select a camera" : "Please select a video file"
+        if (!inputReady) return deviceBackend
+            ? "Please select an input source" : "Please select a video file"
         if (isRunning) return (isPaused ? "Paused: " : "Running: ") + currentProcess.scenarioLabel
         return "Ready: " + currentProcess.scenarioLabel
     }
@@ -305,25 +314,130 @@ Pane {
         currentProcess = availableProcesses[0]
     }
 
-    function enumerateCameras() {
+    function backendDescriptor(name) {
+        return inputSelector.descriptor(name)
+    }
+
+    function _clearEnumerator() {
+        if (deviceEnumerator) {
+            try { deviceEnumerator.deviceAdded.disconnect(onDeviceAdded) } catch(e) {}
+            try { deviceEnumerator.deviceRemoved.disconnect(onDeviceRemoved) } catch(e) {}
+            try { deviceEnumerator.enumerate = false } catch(e) {}
+            deviceEnumerator = null
+        }
+    }
+
+    // A camera enumerates one category per device and one name per mode, so the
+    // label needs both to stay unique; deviceRemoved only carries the name.
+    function _sourceLabel(category, name) {
+        return (currentBackend === "Camera") ? (category + ": " + name) : name
+    }
+
+    function onDeviceAdded(factory, category, name) {
+        var label = _sourceLabel(category, name)
+        if (discoveredSources.indexOf(label) !== -1)
+            return
+        sourceLabels[name] = label
+        var arr = discoveredSources.slice()
+        arr.push(label)
+        discoveredSources = arr
+        if (currentSourceName === "")
+            inputStatusText = ""
+
+        if (pendingSourceRestore === label && currentSourceName === "") {
+            pendingSourceRestore = ""
+            // Deferred: restarting from inside the callback re-enters the
+            // device list while score is still walking it.
+            Qt.callLater(function() { selectSource(label) })
+        }
+    }
+
+    function onDeviceRemoved(factory, name) {
+        var label = sourceLabels[name] || name
+        delete sourceLabels[name]
+        var idx = discoveredSources.indexOf(label)
+        if (idx !== -1) {
+            var arr = discoveredSources.slice()
+            arr.splice(idx, 1)
+            discoveredSources = arr
+        }
+    }
+
+    // Discovery is always signal-driven, whatever the descriptor's `enumerate`
+    // says -- that field only picks the settings shape below.
+    function reenumerate(backend) {
+        _clearEnumerator()
+        discoveredSources = []
+        sourceLabels = ({})
+        inputStatusText = currentSourceName !== ""
+            ? qsTr("Active source: %1").arg(currentSourceName) : ""
+        var desc = backendDescriptor(backend)
+        if (!desc || desc.kind !== "device") return
         try {
-            deviceEnumerator = Score.enumerateDevices("d615690b-f2e2-447b-b70e-a800552db69c")
+            deviceEnumerator = Score.enumerateDevices(desc.uuid)
+            deviceEnumerator.deviceAdded.connect(onDeviceAdded)
+            deviceEnumerator.deviceRemoved.connect(onDeviceRemoved)
             deviceEnumerator.enumerate = true
-            cameraList = []
-            cameraPrettyNamesList = []
-            for (let dev of deviceEnumerator.devices) {
-                cameraList.push(dev)
-                cameraPrettyNamesList.push(dev.category + ": " + dev.name)
+            if (discoveredSources.length === 0 && currentSourceName === "") {
+                inputStatusText = desc.typable
+                    ? qsTr("No %1 source found yet — type a source name if needed").arg(backend)
+                    : qsTr("Looking for %1 sources…").arg(backend)
             }
-            cameraSelector.model = [" ", ...cameraPrettyNamesList]
         } catch (error) {
-            logger.log("Error enumerating cameras: " + error)
+            inputStatusText = qsTr("%1 unavailable in this build").arg(backend)
+            logger.log("Error enumerating " + backend + ": " + error)
+        }
+    }
+
+    function selectSource(name) {
+        currentSourceName = name
+        inputSelector.currentSource = name
+        showInputError = false
+        appSettings.lastSourceName = name
+        // The selector's source combo does not follow currentSource when it is
+        // set programmatically, so name the wired source here.
+        inputStatusText = qsTr("Active source: %1").arg(name)
+        // An in-place device swap leaves the running gfx graph bound to the
+        // destroyed node (black preview), so rebuild the pipeline instead.
+        restartIfRunning()
+    }
+
+    // Read off the enumerator's device list rather than caching the deviceAdded
+    // payload: the list is authoritative and survives a Refresh.
+    function _enumeratedSettings(label) {
+        if (!deviceEnumerator) return null
+        var devs = deviceEnumerator.devices
+        for (var i = 0; i < devs.length; i++) {
+            if (_sourceLabel(devs[i].category, devs[i].name) === label)
+                return devs[i].settings
+        }
+        return null
+    }
+
+    // Assumes it runs inside a macro.
+    function _createInputDeviceInMacro(inPort) {
+        var desc = backendDescriptor(currentBackend)
+        if (!desc || desc.kind !== "device") return
+        var settings = (desc.enumerate === "sync")
+            ? _enumeratedSettings(currentSourceName) : { "Path": currentSourceName }
+        if (!settings) {
+            logger.log("No enumerated settings for source: " + currentSourceName)
+            return
+        }
+        try {
+            Score.removeDevice("Input")
+            // Qt 6.12 dropped QML's QJSValue argument case, so createDevice rejects
+            // the enumerated DeviceSettings (Camera); catching keeps the macro balanced.
+            Score.createDevice("Input", desc.uuid, settings)
+            if (inPort) Score.setAddress(inPort, "Input:/")
+        } catch(e) {
+            logger.log("Error creating input device: " + e)
         }
     }
 
     function validateBeforeStart() {
         showModelError = false
-        showCameraError = false
+        showInputError = false
         showModelFileError = false
 
         if (!currentProcess) {
@@ -341,12 +455,12 @@ Pane {
             showModelFileError = true
             return false
         }
-        if (inputSource === "camera" && cameraSelector.currentIndex <= 0) {
-            logger.log("Cannot start: No camera selected")
-            showCameraError = true
+        if (deviceBackend && currentSourceName === "") {
+            logger.log("Cannot start: No input source selected")
+            showInputError = true
             return false
         }
-        if (inputSource === "video" && videoFilePath === "") {
+        if (!deviceBackend && videoFilePath === "") {
             logger.log("Cannot start: No video file selected")
             return false
         }
@@ -371,12 +485,9 @@ Pane {
         pose_Detector.process_object = proc
 
         var inPort = Score.inlet(proc, 0)
-        if (inputSource === "camera" && cameraSelector.currentIndex > 0) {
-            const cameraSettings = cameraList[cameraSelector.currentIndex - 1].settings
-            try { Score.removeDevice("Camera") } catch(e) {}
-            Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", cameraSettings)
-            if (inPort) Score.setAddress(inPort, "Camera:/")
-        } else if (inputSource === "video" && videoFilePath !== "") {
+        if (deviceBackend && currentSourceName !== "") {
+            _createInputDeviceInMacro(inPort)
+        } else if (!deviceBackend && videoFilePath !== "") {
             var vid = Score.createProcess(Score.rootInterval(), "Video", "")
             video_in.process_object = vid
             if (vid) {
@@ -417,7 +528,7 @@ Pane {
         isRunning = true;
         isPaused = false;
         isStarting = false;
-        var inputDesc = inputSource === "camera" ? cameraPrettyNamesList[cameraSelector.currentIndex - 1] : videoFilePath
+        var inputDesc = deviceBackend ? (currentBackend + ": " + currentSourceName) : videoFilePath
         logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + host + ":" + outPort);
     }
 
@@ -426,7 +537,7 @@ Pane {
         Score.stop();
         Score.startMacro();
         try { Score.removeDevice("MyOSC"); } catch(e) {}
-        try { Score.removeDevice("Camera"); } catch(e) {}
+        try { Score.removeDevice("Input"); } catch(e) {}
         try { if (pose_Detector.process_object) Score.remove(pose_Detector.process_object) } catch(e) {}
         try { if (preview_mapper.process_object) Score.remove(preview_mapper.process_object) } catch(e) {}
         try { if (video_in.process_object) Score.remove(video_in.process_object) } catch(e) {}
@@ -456,7 +567,6 @@ Pane {
     }
 
     Component.onCompleted: {
-        enumerateCameras();
         buildBackends();
 
         restoreSavedSettings();
@@ -468,7 +578,6 @@ Pane {
 
         oscIpAddress.text = appSettings.oscIpAddress
         oscPort.text = appSettings.oscPortValue
-        if (appSettings.lastInputSource !== "") inputSource = appSettings.lastInputSource
         if (appSettings.lastVideoPath !== "") videoFilePath = appSettings.lastVideoPath
         if (appSettings.poseDetectorOutputMode >= 0 && appSettings.poseDetectorOutputMode < poseDetectorOutputModes.length) {
             outputModeSelector.currentIndex = appSettings.poseDetectorOutputMode
@@ -543,13 +652,31 @@ Pane {
             }
         }
 
-        if (appSettings.lastCameraName !== "" && cameraPrettyNamesList.length > 0) {
-            for (var j = 0; j < cameraPrettyNamesList.length; j++) {
-                if (cameraPrettyNamesList[j] === appSettings.lastCameraName) {
-                    cameraSelector.currentIndex = j + 1;
-                    break;
-                }
-            }
+        restoreInputSettings()
+    }
+
+    // The selector re-emits backendSelected/videoFileSelected on our own writes,
+    // hence the restoringInput guard.
+    function restoreInputSettings() {
+        restoringInput = true
+        if (appSettings.lastBackend !== "" && inputSelector.backends.indexOf(appSettings.lastBackend) !== -1)
+            inputSelector.currentBackend = appSettings.lastBackend
+        if (videoFilePath !== "")
+            inputSelector.videoFilePath = videoFilePath
+        restoringInput = false
+
+        currentBackend = inputSelector.currentBackend
+        deviceBackend = inputSelector.deviceBackend
+        if (!deviceBackend)
+            return
+
+        reenumerate(currentBackend)
+        // Inline backends already reported theirs; the rest arrive later.
+        if (appSettings.lastSourceName !== "") {
+            if (discoveredSources.indexOf(appSettings.lastSourceName) !== -1)
+                selectSource(appSettings.lastSourceName)
+            else
+                pendingSourceRestore = appSettings.lastSourceName
         }
     }
 
@@ -562,8 +689,8 @@ Pane {
         orientation: Qt.Horizontal
         handle: Rectangle {
             implicitWidth: 3
-            color: SplitHandle.pressed ? appStyle.primaryColor
-                 : SplitHandle.hovered ? appStyle.borderColor : appStyle.separatorColor
+            color: SplitHandle.pressed ? Theme.primaryColor
+                 : SplitHandle.hovered ? Theme.borderColor : Theme.separatorColor
         }
 
         ScrollView {
@@ -572,119 +699,74 @@ Pane {
             contentWidth: availableWidth
 
             ColumnLayout {
-                x: appStyle.padding
-                width: parent.width - 2 * appStyle.padding
-                spacing: appStyle.spacing * 0.75
+                x: Theme.padding
+                width: parent.width - 2 * Theme.padding
+                spacing: Theme.spacing * 0.75
 
-                CustomLabel {
-                    text: "Input Source"
-                    font.bold: true
-                    font.pixelSize: appStyle.fontSizeSubtitle
-                    Layout.topMargin: appStyle.padding
-                }
-
-                RowLayout {
+                // LIVEPOSE_ADVANCED_IO reveals the NDI/Spout/Syphon backends;
+                // the widget then drops the ones invalid on this platform.
+                InputSourceSelector {
+                    id: inputSelector
                     Layout.fillWidth: true
-                    spacing: appStyle.spacing
-
-                    Button {
-                        text: "Camera"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        font.bold: inputSource === "camera"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            inputSource = "camera"
-                            appSettings.lastInputSource = "camera"
-                            restartIfRunning()
-                        }
+                    Layout.topMargin: Theme.padding
+                    allowedBackends: {
+                        var adv = !!Util.environmentVariable("LIVEPOSE_ADVANCED_IO")
+                        return adv ? ["Camera", "Video file", "NDI", "Spout", "Syphon"]
+                                   : ["Camera", "Video file"]
                     }
+                    sources: runView.discoveredSources
+                    statusText: runView.inputStatusText
 
-                    Button {
-                        text: "Video File"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        font.bold: inputSource === "video"
-                        Layout.fillWidth: true
-                        onClicked: {
-                            inputSource = "video"
-                            appSettings.lastInputSource = "video"
-                            restartIfRunning()
-                        }
+                    onBackendSelected: name => {
+                        if (runView.restoringInput || name === runView.currentBackend)
+                            return
+                        runView.currentBackend = name
+                        runView.deviceBackend = inputSelector.deviceBackend
+                        runView.currentSourceName = ""
+                        runView.showInputError = false
+                        appSettings.lastBackend = name
+                        if (inputSelector.deviceBackend)
+                            runView.reenumerate(name)
+                        else
+                            runView._clearEnumerator()
+                        runView.restartIfRunning()
                     }
-                }
-
-                CustomComboBox {
-                    id: cameraSelector
-                    Layout.fillWidth: true
-                    visible: inputSource === "camera"
-                    model: [" ", ...cameraPrettyNamesList]
-
-                    onCurrentIndexChanged: {
-                        showCameraError = false
-                        if (currentIndex <= 0) return;
-                        appSettings.lastCameraName = cameraPrettyNamesList[currentIndex - 1]
-                        if (isRunning && inputSource === "camera") {
-                            Score.startMacro()
-                            const camera_settings = cameraList[currentIndex - 1].settings
-                            Score.removeDevice("Camera")
-                            Score.createDevice("Camera", "d615690b-f2e2-447b-b70e-a800552db69c", camera_settings)
-                            if (pose_Detector.process_object) {
-                                const inputPort = Score.inlet(pose_Detector.process_object, 0)
-                                if (inputPort) Score.setAddress(inputPort, "Camera:/")
-                            }
-                            Score.endMacro()
-                        }
+                    onSourceSelected: name => {
+                        if (runView.restoringInput) return
+                        runView.selectSource(name)
                     }
+                    onVideoFileSelected: path => {
+                        if (runView.restoringInput) return
+                        runView.videoFilePath = path
+                        appSettings.lastVideoPath = path
+                        runView.setVideoPath(path)
+                    }
+                    onRefreshRequested: () => runView.reenumerate(runView.currentBackend)
                 }
 
                 CustomLabel {
-                    visible: showCameraError && inputSource === "camera"
-                    text: "Please select a camera"
-                    color: appStyle.errorColor
-                    font.pixelSize: appStyle.fontSizeSmall
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    visible: inputSource === "video"
-
-                    CustomTextField {
-                        id: videoFilePathField
-                        Layout.fillWidth: true
-                        placeholderText: "Select video file..."
-                        text: videoFilePath
-                        onTextChanged: {
-                            videoFilePath = text
-                            setVideoPath(text)
-                            appSettings.lastVideoPath = text
-                        }
-                    }
-
-                    Button {
-                        text: "Browse"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
-                        onClicked: Util.openFileDialog("Select Video File", "Video Files (*.mp4 *.avi *.mov *.mkv *.webm);;All Files (*)", videoFilePathField.text, function(path) { if (path) videoFilePathField.text = path })
-                    }
+                    visible: showInputError && deviceBackend
+                    text: "Please select an input source"
+                    color: Theme.errorColor
+                    font.pixelSize: Theme.fontSizeSmall
                 }
 
                 CustomLabel {
-                    visible: inputSource === "video" && videoFilePath === ""
+                    visible: !deviceBackend && videoFilePath === ""
                     text: "Please select a video file"
-                    color: appStyle.errorColor
-                    font.pixelSize: appStyle.fontSizeSmall
+                    color: Theme.errorColor
+                    font.pixelSize: Theme.fontSizeSmall
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: appStyle.separatorColor
+                    color: Theme.separatorColor
                 }
 
                 ColumnLayout {
                     Layout.fillWidth: true
-                    spacing: appStyle.spacing
+                    spacing: Theme.spacing
 
                     TabBar {
                         id: poseTabBar
@@ -705,12 +787,12 @@ Pane {
                         // --- Models ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             CustomLabel {
                                 text: "Choose AI Model"
                                 font.bold: true
-                                font.pixelSize: appStyle.fontSizeSubtitle
+                                font.pixelSize: Theme.fontSizeSubtitle
                             }
 
                             CustomComboBox {
@@ -744,8 +826,8 @@ Pane {
                             CustomLabel {
                                 visible: showModelError
                                 text: "Please select a model"
-                                color: appStyle.errorColor
-                                font.pixelSize: appStyle.fontSizeSmall
+                                color: Theme.errorColor
+                                font.pixelSize: Theme.fontSizeSmall
                             }
                             CustomLabel {
                                 text: (currentProcess && currentProcess.isPoseDetector) ? "Landmark Model (ONNX)" : "ONNX Model File"
@@ -780,8 +862,8 @@ Pane {
 
                                 Button {
                                     text: "Browse"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     onClicked: Util.openFileDialog("Select ONNX Model File", "ONNX Files (*.onnx);;All Files (*)", modelFilePathField.text, function(path) { if (path) modelFilePathField.text = path })
                                 }
                             }
@@ -790,8 +872,8 @@ Pane {
                             CustomLabel {
                                 visible: showModelFileError
                                 text: "Please select an ONNX model file"
-                                color: appStyle.errorColor
-                                font.pixelSize: appStyle.fontSizeSmall
+                                color: Theme.errorColor
+                                font.pixelSize: Theme.fontSizeSmall
                             }
 
                             CustomLabel {
@@ -820,15 +902,15 @@ Pane {
 
                                 Button {
                                     text: "Browse"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     onClicked: Util.openFileDialog("Select Detection Model (ONNX)", "ONNX Files (*.onnx);;All Files (*)", detectionModelFilePathField.text, function(path) { if (path) detectionModelFilePathField.text = path })
                                 }
 
                                 Button {
                                     text: "Clear"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     visible: detectionModelFilePathField.text !== ""
                                     onClicked: detectionModelFilePathField.text = ""
                                 }
@@ -838,7 +920,7 @@ Pane {
                         // --- Output ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             CustomLabel { text: "Output Mode"; font.bold: true }
                             CustomComboBox {
@@ -890,7 +972,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CheckBox {
                                     id: drawSkeletonSwitch
                                     text: "Draw Skeleton"
@@ -908,7 +990,7 @@ Pane {
                                     id: drawLandmarksSwitch
                                     text: "Draw Landmarks"
                                     checked: true
-                                    Layout.leftMargin: appStyle.spacing
+                                    Layout.leftMargin: Theme.spacing
                                     onCheckedChanged: {
                                         if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Landmarks) {
                                             try {
@@ -922,7 +1004,7 @@ Pane {
                                     id: drawBoxesSwitch
                                     text: "Draw Boxes"
                                     checked: false
-                                    Layout.leftMargin: appStyle.spacing
+                                    Layout.leftMargin: Theme.spacing
                                     onCheckedChanged: {
                                         if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Boxes) {
                                             try {
@@ -938,11 +1020,11 @@ Pane {
                         // --- Tracking ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Confidence: " + minConfidenceSlider.value.toFixed(2); font.bold: true }
                                 Slider {
                                     id: minConfidenceSlider
@@ -962,7 +1044,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CheckBox {
                                     id: trackIDsSwitch
                                     text: "Track IDs"
@@ -980,7 +1062,7 @@ Pane {
                                     id: trackROISwitch
                                     text: "Track ROI"
                                     checked: false
-                                    Layout.leftMargin: appStyle.spacing
+                                    Layout.leftMargin: Theme.spacing
                                     onCheckedChanged: {
                                         if (currentProcess && currentProcess.isPoseDetector && pose_Detector.track_ROI) {
                                             try {
@@ -994,7 +1076,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Max Instances"; font.bold: true }
                                 SpinBox {
                                     id: maxInstancesSpinBox
@@ -1012,7 +1094,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Track Memory"; font.bold: true }
                                 SpinBox {
                                     id: trackMemorySpinBox
@@ -1030,7 +1112,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Detection Hold"; font.bold: true }
                                 SpinBox {
                                     id: holdFramesSpinBox
@@ -1048,7 +1130,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Detector Cadence"; font.bold: true }
                                 SpinBox {
                                     id: detectorCadenceSpinBox
@@ -1082,7 +1164,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Max Speed: " + maxSpeedSlider.value.toFixed(2); font.bold: true }
                                 Slider {
                                     id: maxSpeedSlider
@@ -1102,7 +1184,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CheckBox {
                                     id: birthGateSwitch
                                     text: "Birth Gate"
@@ -1120,7 +1202,7 @@ Pane {
                                     id: strictConfirmSwitch
                                     text: "Strict Confirmation"
                                     checked: false
-                                    Layout.leftMargin: appStyle.spacing
+                                    Layout.leftMargin: Theme.spacing
                                     onCheckedChanged: {
                                         if (currentProcess && currentProcess.isPoseDetector && pose_Detector.strict_Confirm) {
                                             try {
@@ -1136,7 +1218,7 @@ Pane {
                         // --- Re-ID ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             CustomLabel { text: "Re-ID Model (ONNX)"; font.bold: true }
                             RowLayout {
@@ -1155,14 +1237,14 @@ Pane {
                                 }
                                 Button {
                                     text: "Browse"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     onClicked: Util.openFileDialog("Select Re-ID Model (ONNX)", "ONNX Files (*.onnx);;All Files (*)", reidModelFilePathField.text, function(path) { if (path) reidModelFilePathField.text = path })
                                 }
                                 Button {
                                     text: "Clear"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     visible: reidModelFilePathField.text !== ""
                                     onClicked: reidModelFilePathField.text = ""
                                 }
@@ -1170,7 +1252,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CheckBox {
                                     id: reidSwitch
                                     text: "Re-ID"
@@ -1188,7 +1270,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Weight: " + reidWeightSlider.value.toFixed(2); font.bold: true }
                                 Slider {
                                     id: reidWeightSlider
@@ -1224,7 +1306,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Re-ID Memory"; font.bold: true }
                                 SpinBox {
                                     id: reidMemorySpinBox
@@ -1242,7 +1324,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Re-ID Margin: " + reidMarginSlider.value.toFixed(2); font.bold: true }
                                 Slider {
                                     id: reidMarginSlider
@@ -1264,11 +1346,11 @@ Pane {
                         // --- Detection ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Detection Class"; font.bold: true }
                                 SpinBox {
                                     id: detectionClassSpinBox
@@ -1301,14 +1383,14 @@ Pane {
                                 }
                                 Button {
                                     text: "Browse"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     onClicked: Util.openFileDialog("Select Class Names File", "Text Files (*.txt);;All Files (*)", classNamesFilePathField.text, function(path) { if (path) classNamesFilePathField.text = path })
                                 }
                                 Button {
                                     text: "Clear"
-                                    font.family: appStyle.fontFamily
-                                    font.pixelSize: appStyle.fontSizeBody
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
                                     visible: classNamesFilePathField.text !== ""
                                     onClicked: classNamesFilePathField.text = ""
                                 }
@@ -1318,11 +1400,11 @@ Pane {
                         // --- Smoothing ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CheckBox {
                                     id: smoothingSwitch
                                     text: "Smoothing"
@@ -1340,7 +1422,7 @@ Pane {
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
                                 CustomLabel { text: "Smoothing: " + smoothingAmountSlider.value.toFixed(2); font.bold: true }
                                 Slider {
                                     id: smoothingAmountSlider
@@ -1363,17 +1445,17 @@ Pane {
                         // --- Network ---
                         ColumnLayout {
                             Layout.fillWidth: true
-                            spacing: appStyle.spacing
+                            spacing: Theme.spacing
 
                             CustomLabel {
                                 text: "OSC Output Settings"
                                 font.bold: true
-                                font.pixelSize: appStyle.fontSizeSubtitle
+                                font.pixelSize: Theme.fontSizeSubtitle
                             }
 
                             RowLayout {
                                 Layout.fillWidth: true
-                                spacing: appStyle.spacing
+                                spacing: Theme.spacing
 
                                 CustomTextField {
                                     id: oscIpAddress
@@ -1408,7 +1490,7 @@ Pane {
 
             PreviewPanel {
                 anchors.fill: parent
-                anchors.margins: appStyle.padding
+                anchors.margins: Theme.padding
                 target: runView
                 // Owns the preview on every view except PRESETS (which has its
                 // own); this keeps inference/OSC alive on the RUN and LOGS views.
