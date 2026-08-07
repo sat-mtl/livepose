@@ -2,7 +2,7 @@ import QtQuick
 import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import Score.UI as UI
-import livepose
+import ca.qc.sat.qmlcomponents
 
 // Live video preview + transport, shared by the RUN and PRESETS views. All
 // pipeline state and actions are delegated to `target` (a RunView), so the
@@ -24,12 +24,12 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: appStyle.spacing
+        spacing: Theme.spacing
 
         CustomLabel {
             text: "Video Preview"
             font.bold: true
-            font.pixelSize: appStyle.fontSizeSubtitle
+            font.pixelSize: Theme.fontSizeSubtitle
         }
 
         Rectangle {
@@ -38,16 +38,16 @@ Item {
             Layout.minimumWidth: 360
             Layout.minimumHeight: 200
             color: "transparent"
-            radius: appStyle.borderRadius
-            border.color: appStyle.borderColor
+            radius: Theme.borderRadius
+            border.color: Theme.borderColor
             border.width: 1
 
             readonly property real aspectRatio: 16 / 9
             Rectangle {
                 anchors.fill: parent
                 anchors.margins: 1
-                radius: appStyle.borderRadius - 1
-                color: appStyle.backgroundColorTertiary
+                radius: Theme.borderRadius - 1
+                color: Theme.backgroundColorTertiary
                 clip: true
                 layer.enabled: true
                 layer.smooth: true
@@ -68,9 +68,9 @@ Item {
                 Text {
                     anchors.centerIn: parent
                     text: root.target ? root.target.statusText : ""
-                    color: appStyle.textColorSecondary
-                    font.family: appStyle.fontFamily
-                    font.pixelSize: appStyle.fontSizeBody
+                    color: Theme.textColorSecondary
+                    font.family: Theme.fontFamily
+                    font.pixelSize: Theme.fontSizeBody
                     visible: !root.running
                 }
             }
@@ -81,8 +81,8 @@ Item {
 
             Button {
                 text: root.running ? "Stop" : "Start"
-                font.family: appStyle.fontFamily
-                font.pixelSize: appStyle.fontSizeBody
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeBody
                 onClicked: {
                     if (!root.target) return
                     if (root.running) root.target.stopCurrentProcess()
@@ -93,8 +93,8 @@ Item {
             Button {
                 text: root.paused ? "Resume" : "Pause"
                 visible: root.running
-                font.family: appStyle.fontFamily
-                font.pixelSize: appStyle.fontSizeBody
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.fontSizeBody
                 onClicked: if (root.target) root.target.togglePause()
             }
 

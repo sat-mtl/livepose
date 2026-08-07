@@ -3,11 +3,12 @@ import QtQuick.Controls.Basic
 import QtQuick.Layouts
 import QtCore
 import QtQuick.Dialogs
+import ca.qc.sat.qmlcomponents
 import livepose
 
 Pane {
     id: presetView
-    background: Rectangle { color: appStyle.backgroundColor }
+    background: Rectangle { color: Theme.backgroundColor }
 
     // The RunView instance the presets are applied to (wired up in Main.qml).
     property var runView: null
@@ -177,8 +178,8 @@ Pane {
         orientation: Qt.Horizontal
         handle: Rectangle {
             implicitWidth: 3
-            color: SplitHandle.pressed ? appStyle.primaryColor
-                 : SplitHandle.hovered ? appStyle.borderColor : appStyle.separatorColor
+            color: SplitHandle.pressed ? Theme.primaryColor
+                 : SplitHandle.hovered ? Theme.borderColor : Theme.separatorColor
         }
 
         ScrollView {
@@ -187,32 +188,32 @@ Pane {
             contentWidth: availableWidth
 
             ColumnLayout {
-                x: appStyle.padding
-                width: parent.width - 2 * appStyle.padding
-                spacing: appStyle.spacing * 0.75
+                x: Theme.padding
+                width: parent.width - 2 * Theme.padding
+                spacing: Theme.spacing * 0.75
 
                 CustomLabel {
                     text: "Presets"
                     font.bold: true
-                    font.pixelSize: appStyle.fontSizeSubtitle
-                    Layout.topMargin: appStyle.padding
+                    font.pixelSize: Theme.fontSizeSubtitle
+                    Layout.topMargin: Theme.padding
                 }
 
                 CustomLabel {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    color: appStyle.textColorSecondary
-                    font.pixelSize: appStyle.fontSizeSmall
+                    color: Theme.textColorSecondary
+                    font.pixelSize: Theme.fontSizeSmall
                     text: "Presets are read from the model pack(s) on disk. Click one to "
                         + "fill in the Run settings, then press Start — the preview is on "
                         + "the right."
                 }
 
-                CustomLabel { text: "Models / Packs Folder"; font.bold: true; Layout.topMargin: appStyle.spacing }
+                CustomLabel { text: "Models / Packs Folder"; font.bold: true; Layout.topMargin: Theme.spacing }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: appStyle.spacing
+                    spacing: Theme.spacing
 
                     CustomTextField {
                         id: modelsFolderField
@@ -227,22 +228,22 @@ Pane {
 
                     Button {
                         text: "Browse"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBody
                         onClicked: modelsFolderDialog.open()
                     }
 
                     Button {
                         text: "Rescan"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBody
                         onClicked: presetView.discover()
                     }
 
                     Button {
                         text: "Get models…"
-                        font.family: appStyle.fontFamily
-                        font.pixelSize: appStyle.fontSizeBody
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSizeBody
                         onClicked: Qt.openUrlExternally(presetView.downloadUrl)
                     }
                 }
@@ -250,9 +251,9 @@ Pane {
                 CustomLabel {
                     Layout.fillWidth: true
                     wrapMode: Text.WordWrap
-                    font.pixelSize: appStyle.fontSizeSmall
-                    color: presetView.presetsList.length === 0 ? appStyle.errorColor
-                                                               : appStyle.textColorSecondary
+                    font.pixelSize: Theme.fontSizeSmall
+                    color: presetView.presetsList.length === 0 ? Theme.errorColor
+                                                               : Theme.textColorSecondary
                     text: {
                         presetView.refreshKey
                         if (presetView.presetsList.length === 0)
@@ -265,9 +266,9 @@ Pane {
 
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.topMargin: appStyle.spacing * 0.5
+                    Layout.topMargin: Theme.spacing * 0.5
                     Layout.preferredHeight: 1
-                    color: appStyle.separatorColor
+                    color: Theme.separatorColor
                 }
 
                 Repeater {
@@ -276,13 +277,13 @@ Pane {
                     ColumnLayout {
                         required property string modelData
                         Layout.fillWidth: true
-                        Layout.topMargin: appStyle.spacing
-                        spacing: appStyle.spacing * 0.5
+                        Layout.topMargin: Theme.spacing
+                        spacing: Theme.spacing * 0.5
 
                         CustomLabel {
                             text: modelData
                             font.bold: true
-                            color: appStyle.textColorSecondary
+                            color: Theme.textColorSecondary
                         }
 
                         Repeater {
@@ -293,12 +294,12 @@ Pane {
                                 required property var modelData
                                 Layout.fillWidth: true
                                 implicitHeight: 36
-                                radius: appStyle.borderRadius
-                                color: cardMouse.containsMouse ? appStyle.backgroundColorTertiary
-                                                               : appStyle.backgroundColorSecondary
+                                radius: Theme.borderRadius
+                                color: cardMouse.containsMouse ? Theme.backgroundColorTertiary
+                                                               : Theme.backgroundColorSecondary
                                 border.width: 1
-                                border.color: cardMouse.containsMouse ? appStyle.primaryColor
-                                                                      : appStyle.borderColor
+                                border.color: cardMouse.containsMouse ? Theme.primaryColor
+                                                                      : Theme.borderColor
 
                                 readonly property bool ready: {
                                     presetView.refreshKey
@@ -307,30 +308,30 @@ Pane {
 
                                 RowLayout {
                                     anchors.fill: parent
-                                    anchors.leftMargin: appStyle.spacing
-                                    anchors.rightMargin: appStyle.spacing
-                                    spacing: appStyle.spacing
+                                    anchors.leftMargin: Theme.spacing
+                                    anchors.rightMargin: Theme.spacing
+                                    spacing: Theme.spacing
 
                                     Rectangle {
                                         Layout.preferredWidth: 9
                                         Layout.preferredHeight: 9
                                         radius: 4.5
                                         Layout.alignment: Qt.AlignVCenter
-                                        color: card.ready ? appStyle.buttonBgActive : appStyle.borderColor
+                                        color: card.ready ? Theme.buttonBgActive : Theme.borderColor
                                     }
 
                                     CustomLabel {
                                         Layout.fillWidth: true
                                         text: card.modelData.name
                                         elide: Text.ElideRight
-                                        color: card.ready ? appStyle.textColor : appStyle.textColorSecondary
+                                        color: card.ready ? Theme.textColor : Theme.textColorSecondary
                                     }
 
                                     CustomLabel {
                                         text: "models missing"
                                         visible: !card.ready
-                                        font.pixelSize: appStyle.fontSizeSmall
-                                        color: appStyle.textColorSecondary
+                                        font.pixelSize: Theme.fontSizeSmall
+                                        color: Theme.textColorSecondary
                                     }
                                 }
 
@@ -352,7 +353,7 @@ Pane {
                     }
                 }
 
-                Item { Layout.preferredHeight: appStyle.padding }
+                Item { Layout.preferredHeight: Theme.padding }
             }
         }
 
@@ -362,7 +363,7 @@ Pane {
 
             PreviewPanel {
                 anchors.fill: parent
-                anchors.margins: appStyle.padding
+                anchors.margins: Theme.padding
                 target: presetView.runView
                 // Owns the preview only while the PRESETS view is showing.
                 active: mainWindow.currentViewIndex === mainWindow.presetsViewIndex
