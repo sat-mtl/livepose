@@ -39,6 +39,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          submodules: recursive
 
       # Build ossia score from master: its ci/common.deps.sh clones
       # score-addon-onnx (the pose detector landed on the addon's default
