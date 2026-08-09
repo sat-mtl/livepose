@@ -18,7 +18,7 @@ jobs:
       matrix:
         include:
           - os: [self-hosted, linux, x64, sat-builder]
-            container: "ubuntu:noble"
+
             platform: linux-x86_64
             artifact-name: linux-x86_64
           - os: ubuntu-24.04-arm
