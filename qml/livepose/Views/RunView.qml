@@ -554,8 +554,10 @@ Pane {
         // buffer. Both are bound unconditionally rather than only when
         // tracking is on, because the binding is fixed at pipeline start:
         // gating it would force a restart (and a video/model reload) on every
-        // toggle of the switch. The detector leaves them empty / 0 by itself
-        // when tracking is off, so the addresses stay silent.
+        // toggle of the switch. With tracking off the detector leaves both
+        // outlets empty, so they still tick once per detected frame carrying
+        // an empty list and 0 — unambiguous for a receiver, and two small
+        // datagrams next to the keypoint payload on the same frame.
         try { Score.createAddress("MyOSC:/skeleton", "List") } catch(e) {}
         try { Score.createAddress("MyOSC:/skeletons", "List") } catch(e) {}
         try { Score.createAddress("MyOSC:/count", "Int") } catch(e) {}
@@ -1006,6 +1008,25 @@ Pane {
                                         } catch(e) { }
                                     }
                                 }
+                            }
+
+                            // A body mesh does not fit in a UDP datagram and the
+                            // message is then dropped with no error anywhere, so the
+                            // outlet simply goes quiet. Measured on mhr-lod5: Mesh
+                            // Vertices (2913 floats) arrives, Mesh Triangles does not;
+                            // on mhr-lod3 neither does. Body Params carries the same
+                            // person in 252 floats, for a receiver that evaluates the
+                            // mesh itself.
+                            CustomLabel {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                visible: poseDetectorDataFormats[dataFormatSelector.currentIndex] === "MeshTriangles"
+                                      || poseDetectorDataFormats[dataFormatSelector.currentIndex] === "MeshVertices"
+                                color: Theme.errorColor
+                                font.pixelSize: Theme.fontSizeSmall
+                                text: "A body mesh is usually too large for one OSC packet and is then "
+                                    + "dropped silently. Use Body Params (252 floats per person) to send "
+                                    + "the mesh over the network, or keep a mesh format only for the preview."
                             }
 
                             CustomLabel { text: "Skeleton"; font.bold: true }
