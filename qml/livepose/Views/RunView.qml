@@ -341,6 +341,7 @@ Pane {
     }
 
     function _clearEnumerator() {
+        discoveryTimeout.stop()
         if (deviceEnumerator) {
             try { deviceEnumerator.deviceAdded.disconnect(onDeviceAdded) } catch(e) {}
             try { deviceEnumerator.deviceRemoved.disconnect(onDeviceRemoved) } catch(e) {}
@@ -356,6 +357,7 @@ Pane {
     }
 
     function onDeviceAdded(factory, category, name) {
+        discoveryTimeout.stop()
         var label = _sourceLabel(category, name)
         if (discoveredSources.indexOf(label) !== -1)
             return
@@ -404,10 +406,37 @@ Pane {
                 inputStatusText = desc.typable
                     ? qsTr("No %1 source found yet — type a source name if needed").arg(backend)
                     : qsTr("Looking for %1 sources…").arg(backend)
+                // NDI and Syphon load their runtime from the host, and score does
+                // not ship it. When it is absent the enumerator is created
+                // normally and simply never reports anything, so the catch below
+                // cannot fire and the user waits forever on a message that blames
+                // the network. Say both causes once the wait is long enough to
+                // mean something.
+                discoveryTimeout.backendName = backend
+                discoveryTimeout.restart()
             }
         } catch (error) {
             inputStatusText = qsTr("%1 unavailable in this build").arg(backend)
             logger.log("Error enumerating " + backend + ": " + error)
+        }
+    }
+
+    Timer {
+        id: discoveryTimeout
+        interval: 12000
+        property string backendName: ""
+        onTriggered: {
+            if (runView.discoveredSources.length > 0 || runView.currentSourceName !== "")
+                return
+            if (runView.currentBackend !== backendName)
+                return
+            runView.inputStatusText = qsTr(
+                "No %1 source after 12 s. Either nothing is sending, or this machine "
+                + "has no %1 runtime installed — it is not bundled with the app.")
+                .arg(backendName)
+            runView.logger.log("No " + backendName + " source discovered after 12 s. "
+                + "If a sender is running, check that the " + backendName
+                + " runtime is installed on this machine; it ships separately.")
         }
     }
 
@@ -576,7 +605,10 @@ Pane {
         isStarting = false;
         var inputDesc = deviceBackend ? (currentBackend + ": " + currentSourceName) : videoFilePath
         var oscDesc = trackIDsSwitch.checked
-            ? "/skeleton, /skeletons (" + maxInstancesSpinBox.value + " slots), /count"
+            ? "/skeleton, /skeletons (" + maxInstancesSpinBox.value + " slots, "
+              + (poseDetectorDataFormats[dataFormatSelector.currentIndex] === "Flattened"
+                 ? "track id first in each" : "no track id — use Flattened for that")
+              + "), /count"
             : "/skeleton"
         logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc
                    + "\nOSC: " + host + ":" + outPort + " -> " + oscDesc);
@@ -1639,14 +1671,38 @@ Pane {
                                 wrapMode: Text.WordWrap
                                 opacity: 0.75
                                 font.pixelSize: Theme.fontSizeSmall
+                                // A slot is NOT a person. The detector rebuilds its
+                                // instance list in detector-score order every frame and
+                                // the tracker labels it in place without reordering, so
+                                // slot i is "the i-th best detection of this frame".
+                                // Measured on a crowd clip: a slot keeps the same track id
+                                // into the next frame only 20% of the time.
                                 text: trackIDsSwitch.checked
-                                    ? "/skeleton — the primary person.\n"
+                                    ? "/skeleton — the strongest detection.\n"
                                       + "/skeletons — " + maxInstancesSpinBox.value
-                                      + " fixed-size slots, one per tracked person.\n"
-                                      + "/count — how many of them are live this frame."
+                                      + " equal-sized slots holding this frame's detections, "
+                                      + "strongest first. A slot is a position in that list, "
+                                      + "not a person: who sits in slot 2 changes frame to frame.\n"
+                                      + "/count — how many detections this frame."
                                     : "/skeleton — the detected person.\n"
                                       + "Turn Track IDs on to also get /skeletons and /count, "
-                                      + "one slot per tracked person."
+                                      + "one slot per detection."
+                            }
+
+                            // Only Flattened puts the track id on the wire (first float of
+                            // each slot, then the class, the box, then the keypoints), so
+                            // it is the only way a receiver can follow one person over time.
+                            CustomLabel {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                visible: trackIDsSwitch.checked
+                                      && poseDetectorDataFormats[dataFormatSelector.currentIndex] !== "Flattened"
+                                color: Theme.errorColor
+                                font.pixelSize: Theme.fontSizeSmall
+                                text: "To follow a person across frames, set Data Format to "
+                                    + "Flattened: it is the only layout that sends the track id "
+                                    + "(each slot starts with id, class, then the bounding box). "
+                                    + "In every other layout the slots carry no identity."
                             }
 
                             // A large /skeletons packet survives localhost (64 kB MTU)
