@@ -1,0 +1,5 @@
+# Spout shares a D3D11 texture, so the Windows builds use the D3D11 backend.
+# The base file pins Vulkan, which was a macOS/Linux decision (PR #78 added an
+# override for macOS only); on Windows it was never a deliberate choice, and
+# the Spout input of the pro build was only ever observed working under D3D11.
+export QSG_RHI_BACKEND=d3d11
