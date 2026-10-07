@@ -518,9 +518,31 @@ Pane {
         const outPort = parseInt(oscPort.text) || 9000;
         const inOscPort = (outPort === 9000 ? 9001 : outPort + 1);
         Score.createOSCDevice("MyOSC", host, inOscPort, outPort);
+
+        // Outlet 2 "Geometry" is the primary detection, in the current Data
+        // Format. It keeps /skeleton in every mode, so a receiver written
+        // against the single-pose output is unaffected by any of this.
+        //
+        // With Track IDs on the detector also fills outlet 4 "Poses Geometry"
+        // — one slot per tracked instance, same Data Format, fixed stride,
+        // zero-padded to Max Instances — and outlet 5 "Count", the number of
+        // live slots. Those become /skeletons and /count: the stride is
+        // len(/skeletons) / Max Instances and only the first /count slots are
+        // live, so the pair is what a multi-person receiver needs to slice the
+        // buffer. Both are bound unconditionally rather than only when
+        // tracking is on, because the binding is fixed at pipeline start:
+        // gating it would force a restart (and a video/model reload) on every
+        // toggle of the switch. The detector leaves them empty / 0 by itself
+        // when tracking is off, so the addresses stay silent.
         try { Score.createAddress("MyOSC:/skeleton", "List") } catch(e) {}
+        try { Score.createAddress("MyOSC:/skeletons", "List") } catch(e) {}
+        try { Score.createAddress("MyOSC:/count", "Int") } catch(e) {}
         var dataOut = Score.outlet(proc, 2)
         if (dataOut) Score.setAddress(dataOut, "MyOSC:/skeleton")
+        var posesOut = Score.outlet(proc, 4)
+        if (posesOut) Score.setAddress(posesOut, "MyOSC:/skeletons")
+        var countOut = Score.outlet(proc, 5)
+        if (countOut) Score.setAddress(countOut, "MyOSC:/count")
         oscReady = true;
 
         Score.endMacro();
@@ -529,7 +551,11 @@ Pane {
         isPaused = false;
         isStarting = false;
         var inputDesc = deviceBackend ? (currentBackend + ": " + currentSourceName) : videoFilePath
-        logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc + "\nOSC: " + host + ":" + outPort);
+        var oscDesc = trackIDsSwitch.checked
+            ? "/skeleton, /skeletons (" + maxInstancesSpinBox.value + " slots), /count"
+            : "/skeleton"
+        logger.log("Started: " + currentProcess.scenarioLabel + "\nInput: " + inputDesc
+                   + "\nOSC: " + host + ":" + outPort + " -> " + oscDesc);
     }
 
     function stopCurrentProcess() {
@@ -1475,6 +1501,21 @@ Pane {
                                     validator: IntValidator { bottom: 1; top: 65535 }
                                     onTextChanged: appSettings.oscPortValue = text
                                 }
+                            }
+
+                            CustomLabel {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                opacity: 0.75
+                                font.pixelSize: Theme.fontSizeSmall
+                                text: trackIDsSwitch.checked
+                                    ? "/skeleton — the primary person.\n"
+                                      + "/skeletons — " + maxInstancesSpinBox.value
+                                      + " fixed-size slots, one per tracked person.\n"
+                                      + "/count — how many of them are live this frame."
+                                    : "/skeleton — the detected person.\n"
+                                      + "Turn Track IDs on to also get /skeletons and /count, "
+                                      + "one slot per tracked person."
                             }
                         }
                     }
