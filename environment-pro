@@ -1,0 +1,9 @@
+export SCORE_AUDIO_BACKEND=dummy
+export SCORE_DISABLE_LIBRARY=1
+export SCORE_DISABLE_AUDIO_PLUGINS=1
+export QSG_RHI_BACKEND=vulkan
+
+# Pro build: offer the NDI / Spout / Syphon inputs in the Input Source picker.
+# InputSourceSelector drops the ones the running platform cannot provide, so
+# one flag covers all three (Spout -> Windows, Syphon -> macOS, NDI -> any).
+export LIVEPOSE_ADVANCED_IO=1

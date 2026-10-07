@@ -18,7 +18,6 @@ jobs:
       matrix:
         include:
           - os: [self-hosted, linux, x64, sat-builder]
-
             platform: linux-x86_64
             artifact-name: linux-x86_64
           - os: ubuntu-24.04-arm
@@ -58,11 +57,14 @@ jobs:
         with:
           score-repo: "ossia/score"
           score-ref: "master"
-          # Keep gfx (video preview/TextureSource), media (camera/video) and
-          # avnd (the onnx Pose Detector is an Avendish/halp process). Disable
+          # Keep gfx (video preview/TextureSource, and with it the Spout and
+          # Syphon input devices), media (camera/video) and avnd (the onnx Pose
+          # Detector is an Avendish/halp process). score-addon-ndi carries the
+          # NDI input device; all three are what the pro build exposes, and the
+          # basic package simply does not reveal them in the picker. Disable
           # everything livepose doesn't use to slim the build.
           cmake-options: >-
-            -DSCORE_ENABLE_ADDONS=score-addon-onnx
+            -DSCORE_ENABLE_ADDONS=score-addon-onnx,score-addon-ndi
             -DSCORE_DISABLE_PLUGINS=score-plugin-faust,score-plugin-jit,score-plugin-vst,score-plugin-vst3,score-plugin-clap,score-plugin-lv2,score-plugin-pd,score-plugin-ysfx,score-plugin-packagemanager,score-plugin-controlsurface,score-plugin-spline3d,score-plugin-recording,score-plugin-nodal,score-plugin-spline,score-plugin-mapping
             -DSCORE_QT_PLUGINS_NO_QTQUICK3D=1
             -DSCORE_QT_PLUGINS_NO_IMAGEFORMATS=1
@@ -74,9 +76,16 @@ jobs:
           macos-notarize-apple-id: ${{ secrets.MAC_NOTARIZE_APPLE_ID }}
           macos-notarize-password: ${{ secrets.MAC_NOTARIZE_PASSWORD }}
 
-      - name: Package custom ossia score app
+      # Two packages out of one score build. They differ only in the
+      # environment file: the pro one sets LIVEPOSE_ADVANCED_IO, which is what
+      # reveals the NDI / Spout / Syphon inputs in the picker. Distinct
+      # app-names so the two sets of artifacts can be released side by side
+      # (the file names derive from the app name) — which also gives the pro
+      # build its own settings scope.
+      - name: Package custom ossia score app (basic)
         uses: ossia/actions/package-custom-app@master
         with:
+          output-path: packages
           app-name: "LivePose"
           qml-files: "qml"
           # No score-file: RunView.qml builds the Camera -> Pose Detector -> OSC
@@ -103,11 +112,42 @@ jobs:
           macos-notarize-apple-id: ${{ secrets.MAC_NOTARIZE_APPLE_ID }}
           macos-notarize-password: ${{ secrets.MAC_NOTARIZE_PASSWORD }}
 
-      - name: Upload packages
+      - name: Upload packages (basic)
         uses: actions/upload-artifact@v7
         with:
           name: livepose-${{ matrix.artifact-name }}
           path: ${{ matrix.artifact-path || 'packages/' }}
+          retention-days: 30
+
+      - name: Package custom ossia score app (pro)
+        uses: ossia/actions/package-custom-app@master
+        with:
+          output-path: packages-pro
+          app-name: "LivePose Pro"
+          qml-files: "qml"
+          score-build-id: ${{ steps.score.outputs.artifact-id }}
+          platforms: "${{ matrix.platform }}"
+          app-organization: "SAT"
+          app-domain: "sat.qc.ca"
+          app-environment: environment-pro
+          app-identifier: "ca.qc.sat.liveposepro"
+          app-description: "pose and blob detection software, with NDI / Spout / Syphon inputs"
+          app-copyright: "Société des Arts Technologiques"
+          app-version: "1.0"
+          app-png: "qml/livepose/resources/images/LivePose_logo.png"
+          app-ico: "qml/livepose/resources/images/LivePose_logo.ico"
+          app-icns: "qml/livepose/resources/images/LivePose_logo.icns"
+          macos-certificate-base64: ${{ secrets.MAC_CERT_B64 }}
+          macos-certificate-password: ${{ secrets.MAC_CERT_PASSWORD }}
+          macos-notarize-team-id: ${{ secrets.MAC_NOTARIZE_TEAM_ID }}
+          macos-notarize-apple-id: ${{ secrets.MAC_NOTARIZE_APPLE_ID }}
+          macos-notarize-password: ${{ secrets.MAC_NOTARIZE_PASSWORD }}
+
+      - name: Upload packages (pro)
+        uses: actions/upload-artifact@v7
+        with:
+          name: livepose-pro-${{ matrix.artifact-name }}
+          path: ${{ matrix.artifact-path || 'packages-pro/' }}
           retention-days: 30
 
   release:
