@@ -67,6 +67,11 @@ ApplicationWindow {
         // Detection
         property int poseDetectorDetectionClass: -1
         property string poseDetectorClassNamesFile: ""
+        // Body mesh (InstantHMR)
+        property string poseDetectorBodyModelPath: ""
+        property bool poseDetectorDrawMesh: false
+        property bool poseDetectorMeshKeypoints: false
+        property int poseDetectorMeshSpace: 0
     }
 
     // Dark unless the OS explicitly asks for light (Unknown reads as dark).

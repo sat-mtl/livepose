@@ -79,10 +79,20 @@ Pane {
         "BlazeFace",
         "MobileFaceNet",
         "RTMPoseFace",
-        "BoxDetection"
+        "BoxDetection",
+        "InstantHMR"
     ]
     property var poseDetectorOutputModes: ["SkeletonOnImage", "SkeletonOnly"]
-    property var poseDetectorDataFormats: ["Raw", "XYArray", "XYZArray", "LineArray", "WorldXYZArray"]
+    // KeypointOutputFormat, in the detector's own order — the value sent is the
+    // label, so the order only has to match for presets that store an index.
+    // MeshTriangles / MeshVertices need a Body Model file and a model that
+    // emits body parameters (InstantHMR); the rest work on any pose model.
+    property var poseDetectorDataFormats: [
+        "Raw", "XYArray", "XYZArray", "LineArray", "WorldXYZArray",
+        "BoxXYWH", "BoxX1Y1X2Y2", "Flattened", "CameraXYZArray", "BodyParams",
+        "MeshTriangles", "MeshVertices"
+    ]
+    property var poseDetectorMeshSpaces: ["OpenGL", "Camera"]
     property var poseDetectorSkeletonTypes: ["Native", "Coco17", "OpenPoseCoco18", "OpenPoseBody25", "Halpe26", "Mpii16", "H36m17", "Dlib68", "Hand21"]
     property var poseDetectorMotionGates: ["None", "MaxSpeed", "Mahalanobis"]
     property var poseDetectorReidPreprocess: ["Auto", "ImageNetRGB", "RawBGR", "RawRGB", "ZeroOneRGB", "ArcFaceRGB"]
@@ -135,6 +145,10 @@ Pane {
             if (pose_Detector.reid_Margin) Score.setValue(pose_Detector.reid_Margin, reidMarginSlider.value)
             if (pose_Detector.detection_Class) Score.setValue(pose_Detector.detection_Class, detectionClassSpinBox.value)
             if (pose_Detector.class_File) Score.setValue(pose_Detector.class_File, classNamesFilePathField.text)
+            if (pose_Detector.body_Model) Score.setValue(pose_Detector.body_Model, bodyModelFilePathField.text)
+            if (pose_Detector.mesh_Keypoints) Score.setValue(pose_Detector.mesh_Keypoints, meshKeypointsSwitch.checked)
+            if (pose_Detector.mesh_Space) Score.setValue(pose_Detector.mesh_Space, poseDetectorMeshSpaces[meshSpaceSelector.currentIndex])
+            if (pose_Detector.draw_Mesh) Score.setValue(pose_Detector.draw_Mesh, drawMeshSwitch.checked)
         } catch(e) { }
     }
     
@@ -201,6 +215,7 @@ Pane {
         if (has(7)) detectionModelFilePathField.text = resolvePresetPath(String(v[7]), packDir)
         if (has(14)) reidModelFilePathField.text = resolvePresetPath(String(v[14]), packDir)
         if (has(26)) classNamesFilePathField.text = resolvePresetPath(String(v[26]), packDir)
+        if (has(31)) bodyModelFilePathField.text = resolvePresetPath(String(v[31]), packDir)
 
         // Enum combo boxes.
         if (has(3)) setCombo(outputModeSelector, poseDetectorOutputModes, v[3])
@@ -208,6 +223,7 @@ Pane {
         if (has(17)) setCombo(reidPreprocessSelector, poseDetectorReidPreprocess, v[17])
         if (has(21)) setCombo(motionGateSelector, poseDetectorMotionGates, v[21])
         if (has(25)) setCombo(skeletonTypeSelector, poseDetectorSkeletonTypes, v[25])
+        if (has(33)) setCombo(meshSpaceSelector, poseDetectorMeshSpaces, v[33])
 
         // Float sliders.
         if (has(4)) minConfidenceSlider.value = v[4]
@@ -234,6 +250,8 @@ Pane {
         if (has(20)) drawLandmarksSwitch.checked = v[20]
         if (has(23)) birthGateSwitch.checked = v[23]
         if (has(24)) strictConfirmSwitch.checked = v[24]
+        if (has(32)) meshKeypointsSwitch.checked = v[32]
+        if (has(34)) drawMeshSwitch.checked = v[34]
 
         // If a pipeline is already running, restart it so the new models load
         // and the live preview reflects the preset immediately. (A workflow
@@ -278,6 +296,10 @@ Pane {
             property var reid_Memory : Score.inlet(process_object, 28);
             property var reid_Margin : Score.inlet(process_object, 29);
             property var hold_Frames : Score.inlet(process_object, 30);
+            property var body_Model : Score.inlet(process_object, 31);
+            property var mesh_Keypoints : Score.inlet(process_object, 32);
+            property var mesh_Space : Score.inlet(process_object, 33);
+            property var draw_Mesh : Score.inlet(process_object, 34);
             property var out : Score.outlet(process_object, 0);
             property var detection : Score.outlet(process_object, 1);
             property var geometry : Score.outlet(process_object, 2);
@@ -667,6 +689,12 @@ Pane {
             detectionClassSpinBox.value = appSettings.poseDetectorDetectionClass
         }
         classNamesFilePathField.text = appSettings.poseDetectorClassNamesFile
+        bodyModelFilePathField.text = appSettings.poseDetectorBodyModelPath
+        drawMeshSwitch.checked = appSettings.poseDetectorDrawMesh === true // default to false
+        meshKeypointsSwitch.checked = appSettings.poseDetectorMeshKeypoints === true // default to false
+        if (appSettings.poseDetectorMeshSpace >= 0 && appSettings.poseDetectorMeshSpace < poseDetectorMeshSpaces.length) {
+            meshSpaceSelector.currentIndex = appSettings.poseDetectorMeshSpace
+        }
 
         if (appSettings.lastSelectedModel !== "" && availableProcesses.length > 0) {
             for (var i = 0; i < availableProcesses.length; i++) {
@@ -996,6 +1024,23 @@ Pane {
                                 }
                             }
 
+                            // Only the mesh Data Formats and the mesh drawing read this.
+                            CustomLabel { text: "Mesh Space"; font.bold: true }
+                            CustomComboBox {
+                                id: meshSpaceSelector
+                                Layout.fillWidth: true
+                                model: poseDetectorMeshSpaces
+                                currentIndex: 0
+                                onCurrentIndexChanged: {
+                                    if (currentProcess && currentProcess.isPoseDetector && pose_Detector.mesh_Space) {
+                                        try {
+                                            Score.setValue(pose_Detector.mesh_Space, poseDetectorMeshSpaces[currentIndex])
+                                            appSettings.poseDetectorMeshSpace = currentIndex
+                                        } catch(e) { }
+                                    }
+                                }
+                            }
+
                             RowLayout {
                                 Layout.fillWidth: true
                                 spacing: Theme.spacing
@@ -1036,6 +1081,71 @@ Pane {
                                             try {
                                                 Score.setValue(pose_Detector.draw_Boxes, checked)
                                                 appSettings.poseDetectorDrawBoxes = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // --- Body mesh (InstantHMR + a Body Model file) ---
+                            CustomLabel { text: "Body Model (.mhrbin)"; font.bold: true }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                CustomTextField {
+                                    id: bodyModelFilePathField
+                                    Layout.fillWidth: true
+                                    text: ""
+                                    placeholderText: "Optional body mesh model (empty = no mesh)..."
+                                    onTextChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.body_Model) {
+                                            try { Score.setValue(pose_Detector.body_Model, text) } catch(e) { }
+                                        }
+                                        appSettings.poseDetectorBodyModelPath = text
+                                    }
+                                }
+                                Button {
+                                    text: "Browse"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
+                                    onClicked: Util.openFileDialog("Select Body Model (MHR)", "MHR Body Models (*.mhrbin);;All Files (*)", bodyModelFilePathField.text, function(path) { if (path) bodyModelFilePathField.text = path })
+                                }
+                                Button {
+                                    text: "Clear"
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontSizeBody
+                                    visible: bodyModelFilePathField.text !== ""
+                                    onClicked: bodyModelFilePathField.text = ""
+                                }
+                            }
+
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.spacing
+                                CheckBox {
+                                    id: drawMeshSwitch
+                                    text: "Draw Mesh"
+                                    checked: false
+                                    enabled: bodyModelFilePathField.text !== ""
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.draw_Mesh) {
+                                            try {
+                                                Score.setValue(pose_Detector.draw_Mesh, checked)
+                                                appSettings.poseDetectorDrawMesh = checked
+                                            } catch(e) { }
+                                        }
+                                    }
+                                }
+                                CheckBox {
+                                    id: meshKeypointsSwitch
+                                    text: "Mesh Keypoints"
+                                    checked: false
+                                    enabled: bodyModelFilePathField.text !== ""
+                                    Layout.leftMargin: Theme.spacing
+                                    onCheckedChanged: {
+                                        if (currentProcess && currentProcess.isPoseDetector && pose_Detector.mesh_Keypoints) {
+                                            try {
+                                                Score.setValue(pose_Detector.mesh_Keypoints, checked)
+                                                appSettings.poseDetectorMeshKeypoints = checked
                                             } catch(e) { }
                                         }
                                     }
