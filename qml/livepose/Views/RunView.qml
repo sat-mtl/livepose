@@ -1648,6 +1648,27 @@ Pane {
                                       + "Turn Track IDs on to also get /skeletons and /count, "
                                       + "one slot per tracked person."
                             }
+
+                            // A large /skeletons packet survives localhost (64 kB MTU)
+                            // but not a real link, where every IP fragment has to arrive.
+                            // Measured mac -> linux over Ethernet, 133-keypoint skeletons:
+                            // 2 slots (532 floats) delivered 1262/1262, 8 slots (2128)
+                            // delivered 5/590. Only warn once it is actually large and
+                            // actually going off-box.
+                            CustomLabel {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                visible: trackIDsSwitch.checked
+                                      && maxInstancesSpinBox.value >= 4
+                                      && oscIpAddress.text.trim() !== "127.0.0.1"
+                                      && oscIpAddress.text.trim() !== "localhost"
+                                color: Theme.errorColor
+                                font.pixelSize: Theme.fontSizeSmall
+                                text: "Over a network, a /skeletons packet this large may be "
+                                    + "dropped whole: it is split across IP fragments and all of "
+                                    + "them have to arrive. If people go missing, lower Max "
+                                    + "Instances or pick a smaller skeleton."
+                            }
                         }
                     }
                 }
