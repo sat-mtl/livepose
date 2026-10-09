@@ -791,14 +791,12 @@ Pane {
                 width: parent.width - 2 * Theme.padding
                 spacing: Theme.spacing * 0.75
 
-                // LIVEPOSE_ADVANCED_IO reveals the NDI/Spout/Syphon backends;
-                // the widget then drops the ones invalid on this platform.
                 InputSourceSelector {
                     id: inputSelector
                     Layout.fillWidth: true
                     Layout.topMargin: Theme.padding
                     allowedBackends: {
-                        var adv = !!Util.environmentVariable("LIVEPOSE_ADVANCED_IO")
+                        var adv = !!Util.environmentVariable("SAT_ADVANCED_IO")
                         return adv ? ["Camera", "Video file", "NDI", "Spout", "Syphon"]
                                    : ["Camera", "Video file"]
                     }

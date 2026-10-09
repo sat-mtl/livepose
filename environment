@@ -3,8 +3,5 @@ export SCORE_DISABLE_LIBRARY=1
 export SCORE_DISABLE_AUDIO_PLUGINS=1
 export QSG_RHI_BACKEND=vulkan
 
-# The NDI / Spout / Syphon inputs are a pro-build feature: see environment-pro,
-# which the "LivePose Pro" package is built with. Uncommenting this in a
-# development checkout reveals them in the Input Source picker too
-# (platform-filtered: Spout on Windows, Syphon on macOS, NDI everywhere).
-# export LIVEPOSE_ADVANCED_IO=1
+# Pro-only inputs; see environment-pro.
+# export SAT_ADVANCED_IO=1
