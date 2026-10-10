@@ -76,12 +76,6 @@ jobs:
           macos-notarize-apple-id: ${{ secrets.MAC_NOTARIZE_APPLE_ID }}
           macos-notarize-password: ${{ secrets.MAC_NOTARIZE_PASSWORD }}
 
-      # Two packages out of one score build. They differ only in the
-      # environment file: the pro one sets LIVEPOSE_ADVANCED_IO, which is what
-      # reveals the NDI / Spout / Syphon inputs in the picker. Distinct
-      # app-names so the two sets of artifacts can be released side by side
-      # (the file names derive from the app name) — which also gives the pro
-      # build its own settings scope.
       - name: Package custom ossia score app (basic)
         uses: ossia/actions/package-custom-app@master
         with:
@@ -116,7 +110,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: livepose-${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path || 'packages/' }}
+          path: packages/${{ matrix.artifact-file || '' }}
           retention-days: 30
 
       - name: Package custom ossia score app (pro)
@@ -130,7 +124,7 @@ jobs:
           app-organization: "SAT"
           app-domain: "sat.qc.ca"
           app-environment: environment-pro
-          app-identifier: "ca.qc.sat.liveposepro"
+          app-identifier: "ca.qc.sat.livepose"
           app-description: "pose and blob detection software, with NDI / Spout / Syphon inputs"
           app-copyright: "Société des Arts Technologiques"
           app-version: "1.0"
@@ -147,7 +141,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: livepose-pro-${{ matrix.artifact-name }}
-          path: ${{ matrix.artifact-path || 'packages-pro/' }}
+          path: packages-pro/${{ matrix.artifact-file || '' }}
           retention-days: 30
 
   release:
