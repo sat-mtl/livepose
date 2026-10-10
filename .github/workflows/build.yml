@@ -124,7 +124,7 @@ jobs:
           app-organization: "SAT"
           app-domain: "sat.qc.ca"
           app-environment: environment-pro
-          app-identifier: "ca.qc.sat.liveposepro"
+          app-identifier: "ca.qc.sat.livepose"
           app-description: "pose and blob detection software, with NDI / Spout / Syphon inputs"
           app-copyright: "Société des Arts Technologiques"
           app-version: "1.0"
