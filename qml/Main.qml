@@ -77,13 +77,6 @@ ApplicationWindow {
         property int poseDetectorMeshSpace: 0
     }
 
-    // Dark unless the OS explicitly asks for light (Unknown reads as dark).
-    Binding {
-        target: Theme
-        property: "dark"
-        value: Application.styleHints.colorScheme !== Qt.ColorScheme.Light
-    }
-
     palette {
         // Text colors
         text: Theme.textColor
@@ -137,7 +130,7 @@ ApplicationWindow {
         // Relative paths would resolve against AboutDialog.qml in the submodule.
         logoPath: Qt.resolvedUrl("livepose/resources/images/LivePose_logo.png")
         partnerLogos: [
-            { source: Qt.resolvedUrl("livepose/resources/images/sat_logo.png"), website: "https://www.sat.qc.ca" },
+            { source: Theme.satLogoSource, website: "https://www.sat.qc.ca" },
             { source: Qt.resolvedUrl("livepose/resources/images/ossia_logo.png"), website: "https://ossia.io" }
         ]
     }
