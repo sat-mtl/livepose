@@ -42,6 +42,16 @@ Pane {
 
     property string videoFilePath: ""
 
+    // Preview render resolution, consumed by PreviewPanel. score derives the
+    // render size of the WHOLE preview render graph from the TextureSource's
+    // colour buffer, so this is the resolution the Camera -> Pose Detector chain
+    // renders at, not just the size of the displayed image.
+    readonly property var previewResolutions: [[640, 360], [960, 540], [1280, 720], [1920, 1080]]
+    readonly property int previewResolutionIndex: Math.max(
+        0, Math.min(previewResolutions.length - 1, previewResolutionSelector.currentIndex))
+    readonly property int previewWidth: previewResolutions[previewResolutionIndex][0]
+    readonly property int previewHeight: previewResolutions[previewResolutionIndex][1]
+
     // Pure (side-effect-free) readiness/status, consumed by PreviewPanel so the
     // RUN and PRESETS previews share one source of truth.
     readonly property bool inputReady:
@@ -661,6 +671,9 @@ Pane {
         oscIpAddress.text = appSettings.oscIpAddress
         oscPort.text = appSettings.oscPortValue
         if (appSettings.lastVideoPath !== "") videoFilePath = appSettings.lastVideoPath
+        if (appSettings.previewResolution >= 0 && appSettings.previewResolution < previewResolutions.length) {
+            previewResolutionSelector.currentIndex = appSettings.previewResolution
+        }
         if (appSettings.poseDetectorOutputMode >= 0 && appSettings.poseDetectorOutputMode < poseDetectorOutputModes.length) {
             outputModeSelector.currentIndex = appSettings.poseDetectorOutputMode
         }
@@ -1007,6 +1020,20 @@ Pane {
                         ColumnLayout {
                             Layout.fillWidth: true
                             spacing: Theme.spacing
+
+                            CustomLabel { text: "Preview Resolution"; font.bold: true }
+                            CustomComboBox {
+                                id: previewResolutionSelector
+                                Layout.fillWidth: true
+                                model: runView.previewResolutions.map(r => r[0] + " x " + r[1])
+                                currentIndex: 2
+                                // Resizing the colour buffer makes Qt re-create the
+                                // render target, which tears down and rebuilds the
+                                // render list -- and with it the detector's ONNX
+                                // session. Fine for a discrete choice, so there is
+                                // deliberately no slider here.
+                                onCurrentIndexChanged: appSettings.previewResolution = currentIndex
+                            }
 
                             CustomLabel { text: "Output Mode"; font.bold: true }
                             CustomComboBox {
