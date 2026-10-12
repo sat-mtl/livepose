@@ -56,6 +56,12 @@ Item {
                     id: textureSource
                     width: 1280
                     height: 720
+                    // JS::TextureSource builds its PreviewNode from the colour
+                    // buffer's pixel size, which score then uses as the render size
+                    // of the whole graph. Pinning it keeps that resolution a
+                    // deliberate choice instead of panel size x device pixel ratio.
+                    fixedColorBufferWidth: root.target ? root.target.previewWidth : width
+                    fixedColorBufferHeight: root.target ? root.target.previewHeight : height
                     process: (root.active && root.running) ? "livepose preview" : ""
                     port: 0
                     visible: root.active && root.running

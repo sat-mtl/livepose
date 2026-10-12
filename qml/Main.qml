@@ -33,6 +33,9 @@ ApplicationWindow {
         property string oscPortValue: "9000"
         property string lastVideoPath: ""
 
+        // Index into RunView.previewResolutions; 1280x720.
+        property int previewResolution: 2
+
         property int poseDetectorOutputMode: 0
         property real poseDetectorMinConfidence: 0.3
         property bool poseDetectorDrawSkeleton: true
